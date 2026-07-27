@@ -35,6 +35,7 @@ import com.unifiedserver.dashboard.ui.theme.OnSurface
 import com.unifiedserver.dashboard.ui.theme.Primary
 import com.unifiedserver.dashboard.ui.theme.Surface
 import com.unifiedserver.dashboard.ui.theme.SurfaceVariant
+import com.unifiedserver.dashboard.ui.theme.StatusGray
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector? = null) {
     object Setup : Screen("setup", "Setup")
@@ -91,8 +92,8 @@ fun AppNavigation(isSetupComplete: Boolean) {
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Primary,
                                 selectedTextColor = Primary,
-                                unselectedIconColor = SurfaceVariant,
-                                unselectedTextColor = SurfaceVariant,
+                                unselectedIconColor = StatusGray,
+                                unselectedTextColor = StatusGray,
                                 indicatorColor = Surface
                             )
                         )

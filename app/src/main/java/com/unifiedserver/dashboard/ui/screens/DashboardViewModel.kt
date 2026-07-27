@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.unifiedserver.dashboard.data.models.HealthResponse
 import com.unifiedserver.dashboard.data.models.SystemInfo
 import com.unifiedserver.dashboard.data.models.Torrent
+import com.unifiedserver.dashboard.data.models.DiskDevice
 import com.unifiedserver.dashboard.data.repository.DashboardRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
@@ -19,7 +20,8 @@ data class DashboardUiState(
     val error: String? = null,
     val health: HealthResponse? = null,
     val systemInfo: SystemInfo? = null,
-    val torrents: List<Torrent> = emptyList()
+    val torrents: List<Torrent> = emptyList(),
+    val disks: List<DiskDevice> = emptyList()
 )
 
 @HiltViewModel
@@ -55,16 +57,19 @@ class DashboardViewModel @Inject constructor(
                 val healthDeferred = async { repository.getHealth() }
                 val systemDeferred = async { repository.getSystemInfo() }
                 val torrentsDeferred = async { repository.getTorrents() }
+                val disksDeferred = async { repository.getDisks() }
 
                 val healthResult = healthDeferred.await()
                 val systemResult = systemDeferred.await()
                 val torrentsResult = torrentsDeferred.await()
+                val disksResult = disksDeferred.await()
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     health = healthResult.getOrNull(),
                     systemInfo = systemResult.getOrNull(),
                     torrents = torrentsResult.getOrNull() ?: emptyList(),
+                    disks = disksResult.getOrNull() ?: emptyList(),
                     error = healthResult.exceptionOrNull()?.message
                 )
             } catch (e: Exception) {

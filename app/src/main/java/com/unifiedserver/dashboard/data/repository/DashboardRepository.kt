@@ -41,4 +41,14 @@ class DashboardRepository @Inject constructor(
             throw Exception("HTTP ${response.code()}: ${response.message()}")
         }
     }
+
+    suspend fun getDisks(): Result<List<com.unifiedserver.dashboard.data.models.DiskDevice>> = runCatching {
+        val service = buildApiService(preferencesManager)
+        val response = service.getDisks()
+        if (response.isSuccessful) {
+            response.body()?.disks ?: emptyList()
+        } else {
+            throw Exception("HTTP ${response.code()}: ${response.message()}")
+        }
+    }
 }

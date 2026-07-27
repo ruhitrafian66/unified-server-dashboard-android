@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.unifiedserver.dashboard.data.models.SystemInfo
+import com.unifiedserver.dashboard.data.models.DiskDevice
 import com.unifiedserver.dashboard.ui.components.*
 import com.unifiedserver.dashboard.ui.theme.*
 
@@ -120,7 +121,7 @@ fun DashboardScreen(
                             )
                         }
                         item {
-                            SystemInfoCards(info = info)
+                            SystemInfoCards(info = info, disks = uiState.disks)
                         }
                     }
 
@@ -151,7 +152,7 @@ fun DashboardScreen(
 }
 
 @Composable
-fun SystemInfoCards(info: SystemInfo) {
+fun SystemInfoCards(info: SystemInfo, disks: List<DiskDevice> = emptyList()) {
     Column(
         modifier = Modifier.padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -164,8 +165,18 @@ fun SystemInfoCards(info: SystemInfo) {
         if (info.memory.isNotBlank()) {
             SystemInfoRow(label = "Memory", value = info.memory)
         }
-        // Disk: format from backend is "45G/200G (22%)"
-        if (info.disk.isNotBlank()) {
+        // Disk: find a non-root disk (likely SSD), otherwise show root
+        if (disks.isNotEmpty()) {
+            val ssdDisk = disks.find { !it.device.contains("nvme0n1") && it.mountPoint != "/" } 
+                ?: disks.find { it.device.contains("nvme0n1") || it.device.contains("sda") }
+            
+            if (ssdDisk != null) {
+                SystemInfoRow(
+                    label = "Disk (${ssdDisk.device})",
+                    value = "${ssdDisk.used}/${ssdDisk.size} (${ssdDisk.usePercent})"
+                )
+            }
+        } else if (info.disk.isNotBlank()) {
             SystemInfoRow(label = "Disk (root)", value = info.disk)
         }
         // Uptime

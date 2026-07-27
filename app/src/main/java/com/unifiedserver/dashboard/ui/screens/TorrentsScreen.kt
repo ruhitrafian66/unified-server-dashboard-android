@@ -59,9 +59,6 @@ fun TorrentsScreen(
                     IconButton(onClick = { showSortMenu = true }) {
                         Icon(Icons.Filled.Sort, contentDescription = "Sort", tint = Primary)
                     }
-                    IconButton(onClick = { showSearchSheet = true }) {
-                        Icon(Icons.Filled.Search, contentDescription = "Search", tint = Primary)
-                    }
                     DropdownMenu(
                         expanded = showSortMenu,
                         onDismissRequest = { showSortMenu = false },
@@ -198,12 +195,28 @@ fun TorrentsScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAddDialog = true },
-                containerColor = Primary,
-                contentColor = OnPrimary
+            Row(
+                modifier = Modifier.padding(end = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Filled.Add, contentDescription = "Add torrent")
+                Button(
+                    onClick = { showSearchSheet = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.height(56.dp)
+                ) {
+                    Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Search", style = MaterialTheme.typography.labelLarge, color = OnPrimary)
+                }
+                FloatingActionButton(
+                    onClick = { showAddDialog = true },
+                    containerColor = Primary,
+                    contentColor = OnPrimary
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Add torrent")
+                }
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
