@@ -1,0 +1,64 @@
+com.unifiedserver.dashboard.app-navigation-compose-2.7.7-0 /Users/ruhitrafian/.gradle/caches/transforms-4/0183d1a52937eb0769d388c7928eac41/transformed/navigation-compose-2.7.7/res
+com.unifiedserver.dashboard.app-coil-base-2.6.0-1 /Users/ruhitrafian/.gradle/caches/transforms-4/0240e4388b273462a0c2e23e429478da/transformed/coil-base-2.6.0/res
+com.unifiedserver.dashboard.app-material-icons-extended-release-2 /Users/ruhitrafian/.gradle/caches/transforms-4/04f7cc377a20ebe2b307e60f2a1335d1/transformed/material-icons-extended-release/res
+com.unifiedserver.dashboard.app-lifecycle-runtime-release-3 /Users/ruhitrafian/.gradle/caches/transforms-4/0dbd8f8b090ccf3bc71b921fc2a68c0e/transformed/lifecycle-runtime-release/res
+com.unifiedserver.dashboard.app-fragment-1.5.1-4 /Users/ruhitrafian/.gradle/caches/transforms-4/0dc18d8d4064ed49bee5c24ed6eddc04/transformed/fragment-1.5.1/res
+com.unifiedserver.dashboard.app-lifecycle-runtime-ktx-release-5 /Users/ruhitrafian/.gradle/caches/transforms-4/1ca5018925d4ef59cf8488be9c06c094/transformed/lifecycle-runtime-ktx-release/res
+com.unifiedserver.dashboard.app-foundation-layout-release-6 /Users/ruhitrafian/.gradle/caches/transforms-4/1d528b32031fd97286381eab1dac0ddc/transformed/foundation-layout-release/res
+com.unifiedserver.dashboard.app-core-ktx-1.13.1-7 /Users/ruhitrafian/.gradle/caches/transforms-4/1f56286bd73e064d25d589b5b6e739c2/transformed/core-ktx-1.13.1/res
+com.unifiedserver.dashboard.app-material-icons-core-release-8 /Users/ruhitrafian/.gradle/caches/transforms-4/20d7dee0be8dd26728651fc903ff9296/transformed/material-icons-core-release/res
+com.unifiedserver.dashboard.app-datastore-preferences-release-9 /Users/ruhitrafian/.gradle/caches/transforms-4/21aee9d8d7e0c3153c8720460a40e9e8/transformed/datastore-preferences-release/res
+com.unifiedserver.dashboard.app-ui-util-release-10 /Users/ruhitrafian/.gradle/caches/transforms-4/23e43c42b5838b27a5bec4a59f160faf/transformed/ui-util-release/res
+com.unifiedserver.dashboard.app-lifecycle-viewmodel-compose-release-11 /Users/ruhitrafian/.gradle/caches/transforms-4/2618507d17d151003b7de6b4bf388aa1/transformed/lifecycle-viewmodel-compose-release/res
+com.unifiedserver.dashboard.app-lifecycle-process-2.8.2-12 /Users/ruhitrafian/.gradle/caches/transforms-4/2ae766d5e11000c37ea3cd1c407096b9/transformed/lifecycle-process-2.8.2/res
+com.unifiedserver.dashboard.app-datastore-core-release-13 /Users/ruhitrafian/.gradle/caches/transforms-4/3500fca16c40ac65415dfce1fa9b7c06/transformed/datastore-core-release/res
+com.unifiedserver.dashboard.app-savedstate-ktx-1.2.1-14 /Users/ruhitrafian/.gradle/caches/transforms-4/3736a9f3db4a1020a6aa7c2611f7a0b7/transformed/savedstate-ktx-1.2.1/res
+com.unifiedserver.dashboard.app-navigation-common-2.7.7-15 /Users/ruhitrafian/.gradle/caches/transforms-4/38c3a543ee17a87f934462a57b1ac686/transformed/navigation-common-2.7.7/res
+com.unifiedserver.dashboard.app-runtime-release-16 /Users/ruhitrafian/.gradle/caches/transforms-4/411ad3bbd089fd26876abfc816d08000/transformed/runtime-release/res
+com.unifiedserver.dashboard.app-hilt-navigation-compose-1.2.0-17 /Users/ruhitrafian/.gradle/caches/transforms-4/418de95e695c88406760d8d40c79f626/transformed/hilt-navigation-compose-1.2.0/res
+com.unifiedserver.dashboard.app-material3-release-18 /Users/ruhitrafian/.gradle/caches/transforms-4/4c535c63677ffe7fcb82f3ae4af89254/transformed/material3-release/res
+com.unifiedserver.dashboard.app-navigation-runtime-2.7.7-19 /Users/ruhitrafian/.gradle/caches/transforms-4/50e2589cdf0bf668a3d67d9ae2a76e65/transformed/navigation-runtime-2.7.7/res
+com.unifiedserver.dashboard.app-customview-poolingcontainer-1.0.0-20 /Users/ruhitrafian/.gradle/caches/transforms-4/570aaaa057f92b78028349f2abc342a3/transformed/customview-poolingcontainer-1.0.0/res
+com.unifiedserver.dashboard.app-foundation-release-21 /Users/ruhitrafian/.gradle/caches/transforms-4/592b5941c9cf64f8471b7dfe393d2f28/transformed/foundation-release/res
+com.unifiedserver.dashboard.app-lifecycle-viewmodel-savedstate-2.8.2-22 /Users/ruhitrafian/.gradle/caches/transforms-4/5bccd215dfa6ca20d1496d478db18f8f/transformed/lifecycle-viewmodel-savedstate-2.8.2/res
+com.unifiedserver.dashboard.app-profileinstaller-1.3.1-23 /Users/ruhitrafian/.gradle/caches/transforms-4/6b1e8e99f3298af95fb31260a8299607/transformed/profileinstaller-1.3.1/res
+com.unifiedserver.dashboard.app-appcompat-resources-1.6.1-24 /Users/ruhitrafian/.gradle/caches/transforms-4/73e7d3b7f111933950bc0f23d91a8d5c/transformed/appcompat-resources-1.6.1/res
+com.unifiedserver.dashboard.app-ui-graphics-release-25 /Users/ruhitrafian/.gradle/caches/transforms-4/79197de6f3b50a233445ec5ed11f73fe/transformed/ui-graphics-release/res
+com.unifiedserver.dashboard.app-ui-tooling-preview-release-26 /Users/ruhitrafian/.gradle/caches/transforms-4/85179fc4a358579682a33374f1e4313b/transformed/ui-tooling-preview-release/res
+com.unifiedserver.dashboard.app-ui-geometry-release-27 /Users/ruhitrafian/.gradle/caches/transforms-4/872948119848b23f7df04a0784447710/transformed/ui-geometry-release/res
+com.unifiedserver.dashboard.app-material-release-28 /Users/ruhitrafian/.gradle/caches/transforms-4/89322dedff723288909a0e826cf3b166/transformed/material-release/res
+com.unifiedserver.dashboard.app-ui-test-manifest-1.6.8-29 /Users/ruhitrafian/.gradle/caches/transforms-4/915c4bab05196359706b89fc034f9e18/transformed/ui-test-manifest-1.6.8/res
+com.unifiedserver.dashboard.app-material-ripple-release-30 /Users/ruhitrafian/.gradle/caches/transforms-4/97c467a38bfe5be76971b2b9492c3604/transformed/material-ripple-release/res
+com.unifiedserver.dashboard.app-lifecycle-livedata-2.8.2-31 /Users/ruhitrafian/.gradle/caches/transforms-4/994c39fc1a569e13cb258d64c04fc80c/transformed/lifecycle-livedata-2.8.2/res
+com.unifiedserver.dashboard.app-core-runtime-2.2.0-32 /Users/ruhitrafian/.gradle/caches/transforms-4/99f02c17cb18c16be43a00c9f255db66/transformed/core-runtime-2.2.0/res
+com.unifiedserver.dashboard.app-lifecycle-viewmodel-ktx-2.8.2-33 /Users/ruhitrafian/.gradle/caches/transforms-4/9b489bf88c45cb68ab3b8c2ed676ae53/transformed/lifecycle-viewmodel-ktx-2.8.2/res
+com.unifiedserver.dashboard.app-lifecycle-livedata-core-ktx-2.8.2-34 /Users/ruhitrafian/.gradle/caches/transforms-4/9cb7a0106da5659de53bd79261c362a0/transformed/lifecycle-livedata-core-ktx-2.8.2/res
+com.unifiedserver.dashboard.app-annotation-experimental-1.4.0-35 /Users/ruhitrafian/.gradle/caches/transforms-4/a224639c5e3030b7076e3a7f4972271e/transformed/annotation-experimental-1.4.0/res
+com.unifiedserver.dashboard.app-navigation-runtime-ktx-2.7.7-36 /Users/ruhitrafian/.gradle/caches/transforms-4/aceb55e18ab84d5cc70ddd5a9f30852e/transformed/navigation-runtime-ktx-2.7.7/res
+com.unifiedserver.dashboard.app-lifecycle-viewmodel-release-37 /Users/ruhitrafian/.gradle/caches/transforms-4/b28327a7832c5b38386850d7bfd75454/transformed/lifecycle-viewmodel-release/res
+com.unifiedserver.dashboard.app-navigation-common-ktx-2.7.7-38 /Users/ruhitrafian/.gradle/caches/transforms-4/b4ac4bf9563bc01978b8a8b74e3d3b78/transformed/navigation-common-ktx-2.7.7/res
+com.unifiedserver.dashboard.app-ui-tooling-release-39 /Users/ruhitrafian/.gradle/caches/transforms-4/b91703f5d14501276619b29543b0ac00/transformed/ui-tooling-release/res
+com.unifiedserver.dashboard.app-datastore-release-40 /Users/ruhitrafian/.gradle/caches/transforms-4/b92075fa1e9e129f38b613d2f703649f/transformed/datastore-release/res
+com.unifiedserver.dashboard.app-activity-1.9.0-41 /Users/ruhitrafian/.gradle/caches/transforms-4/bba00ee9c561a844d00148631d68694e/transformed/activity-1.9.0/res
+com.unifiedserver.dashboard.app-ui-unit-release-42 /Users/ruhitrafian/.gradle/caches/transforms-4/bda378799b9d3d4f0296d764c9f31e05/transformed/ui-unit-release/res
+com.unifiedserver.dashboard.app-runtime-saveable-release-43 /Users/ruhitrafian/.gradle/caches/transforms-4/c13d66035f5c826d7a3c7fa5665b00a6/transformed/runtime-saveable-release/res
+com.unifiedserver.dashboard.app-animation-release-44 /Users/ruhitrafian/.gradle/caches/transforms-4/c64ac7902f9d220dc31ad944e37eaab4/transformed/animation-release/res
+com.unifiedserver.dashboard.app-lifecycle-livedata-core-2.8.2-45 /Users/ruhitrafian/.gradle/caches/transforms-4/ccc79eb365e0fc71997cec9a3383c52a/transformed/lifecycle-livedata-core-2.8.2/res
+com.unifiedserver.dashboard.app-ui-text-release-46 /Users/ruhitrafian/.gradle/caches/transforms-4/da5186a42144f471350a21bb8abe4ec3/transformed/ui-text-release/res
+com.unifiedserver.dashboard.app-activity-ktx-1.9.0-47 /Users/ruhitrafian/.gradle/caches/transforms-4/de806c19cf46a2560abbf75dbe3589a2/transformed/activity-ktx-1.9.0/res
+com.unifiedserver.dashboard.app-savedstate-1.2.1-48 /Users/ruhitrafian/.gradle/caches/transforms-4/e05bce641a876675e0cf78b847de4f1f/transformed/savedstate-1.2.1/res
+com.unifiedserver.dashboard.app-ui-tooling-data-release-49 /Users/ruhitrafian/.gradle/caches/transforms-4/ecd12f708fe6ea49dab39a373a7fad59/transformed/ui-tooling-data-release/res
+com.unifiedserver.dashboard.app-activity-compose-1.9.0-50 /Users/ruhitrafian/.gradle/caches/transforms-4/f497b301525e9b4c9c70370bc887abf9/transformed/activity-compose-1.9.0/res
+com.unifiedserver.dashboard.app-animation-core-release-51 /Users/ruhitrafian/.gradle/caches/transforms-4/f58a021eb4f6bdecc50bca33e028b4ed/transformed/animation-core-release/res
+com.unifiedserver.dashboard.app-hilt-navigation-1.2.0-52 /Users/ruhitrafian/.gradle/caches/transforms-4/f67a07962eb5aec7643ab4511f4069d3/transformed/hilt-navigation-1.2.0/res
+com.unifiedserver.dashboard.app-core-1.13.1-53 /Users/ruhitrafian/.gradle/caches/transforms-4/f84f0af957a2b1f53efb6051faa54499/transformed/core-1.13.1/res
+com.unifiedserver.dashboard.app-ui-release-54 /Users/ruhitrafian/.gradle/caches/transforms-4/f86a11b1e983b56ab4a33ce257546461/transformed/ui-release/res
+com.unifiedserver.dashboard.app-emoji2-1.3.0-55 /Users/ruhitrafian/.gradle/caches/transforms-4/fe9fd977d17491b6b0864977058a0404/transformed/emoji2-1.3.0/res
+com.unifiedserver.dashboard.app-startup-runtime-1.1.1-56 /Users/ruhitrafian/.gradle/caches/transforms-4/ffff1a43da450c394c5e65b5ecc764a4/transformed/startup-runtime-1.1.1/res
+com.unifiedserver.dashboard.app-pngs-57 /Users/ruhitrafian/Unified Server Dashboard Android/app/build/generated/res/pngs/debug
+com.unifiedserver.dashboard.app-resValues-58 /Users/ruhitrafian/Unified Server Dashboard Android/app/build/generated/res/resValues/debug
+com.unifiedserver.dashboard.app-packageDebugResources-59 /Users/ruhitrafian/Unified Server Dashboard Android/app/build/intermediates/incremental/debug/packageDebugResources/merged.dir
+com.unifiedserver.dashboard.app-packageDebugResources-60 /Users/ruhitrafian/Unified Server Dashboard Android/app/build/intermediates/incremental/debug/packageDebugResources/stripped.dir
+com.unifiedserver.dashboard.app-debug-61 /Users/ruhitrafian/Unified Server Dashboard Android/app/build/intermediates/merged_res/debug/mergeDebugResources
+com.unifiedserver.dashboard.app-debug-62 /Users/ruhitrafian/Unified Server Dashboard Android/app/src/debug/res
+com.unifiedserver.dashboard.app-main-63 /Users/ruhitrafian/Unified Server Dashboard Android/app/src/main/res
