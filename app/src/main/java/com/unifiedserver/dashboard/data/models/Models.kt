@@ -123,6 +123,39 @@ data class DiskDevice(
         get() = usePercent.removeSuffix("%").toFloatOrNull() ?: 0f
 }
 
+// ─── CPU Monitoring ──────────────────────────────────────────────────────────
+
+data class CpuSample(
+    val t: Long = 0,
+    val v: Float = 0f
+)
+
+data class CpuHistoryResponse(
+    val samples: List<CpuSample> = emptyList(),
+    val interval: Int = 60
+)
+
+data class CpuMetrics(
+    val currentUsage: Float = 0f,
+    val averageUsage: Float = 0f,
+    val maxUsage: Float = 0f,
+    val minUsage: Float = 0f,
+    val dataPoints: List<CpuDataPoint> = emptyList(),
+    @SerializedName("lastUpdated") val lastUpdated: Long = 0,
+    val cpuCount: Int = 0
+)
+
+data class CpuDataPoint(
+    val timestamp: Long = 0,
+    val usage: Float = 0f
+)
+
+data class CpuMetricsResponse(
+    val success: Boolean = true,
+    val data: CpuMetrics = CpuMetrics(),
+    val message: String? = null
+)
+
 // ─── Docker ──────────────────────────────────────────────────────────────────
 
 data class DockerContainersResponse(

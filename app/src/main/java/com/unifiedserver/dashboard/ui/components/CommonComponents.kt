@@ -250,3 +250,285 @@ fun formatUptime(seconds: Long): String {
         else -> "${m}m"
     }
 }
+
+@Composable
+fun CpuGraphCard(
+    currentUsage: Float,
+    averageUsage: Float,
+    maxUsage: Float,
+    minUsage: Float,
+    dataPoints: List<Pair<Float, Float>>,
+    cpuCount: Int,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Surface),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Header with title and current usage
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "CPU Usage",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = OnSurface
+                    )
+                    if (cpuCount > 0) {
+                        Text(
+                            text = "$cpuCount cores",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Column(
+                    horizontalAlignment = Alignment.End
+                ) {
+                    Text(
+                        text = "${currentUsage.toInt()}%",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = when {
+                            currentUsage > 80f -> StatusRed
+                            currentUsage > 60f -> StatusYellow
+                            else -> Primary
+                        }
+                    )
+                    Text(
+                        text = "Current",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Progress bar for current usage
+            LinearProgressIndicator(
+                progress = { (currentUsage / 100f).coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = when {
+                    currentUsage > 80f -> StatusRed
+                    currentUsage > 60f -> StatusYellow
+                    else -> Primary
+                },
+                trackColor = SurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Mini graph
+            if (dataPoints.isNotEmpty()) {
+                CpuMiniGraph(dataPoints = dataPoints, modifier = Modifier.fillMaxWidth().height(80.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            // Stats row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatBox(label = "Avg", value = "${averageUsage.toInt()}%", modifier = Modifier.weight(1f))
+                StatBox(label = "Max", value = "${maxUsage.toInt()}%", modifier = Modifier.weight(1f))
+                StatBox(label = "Min", value = "${minUsage.toInt()}%", modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+fun StatBox(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .background(SurfaceVariant, RoundedCornerShape(8.dp))
+            .padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelMedium,
+            color = OnSurface
+        )
+    }
+}
+
+@Composable
+fun CpuMiniGraph(
+    dataPoints: List<Pair<Float, Float>>,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .background(SurfaceVariant, RoundedCornerShape(8.dp))
+            .padding(12.dp)
+    ) {
+        if (dataPoints.isEmpty()) {
+            Text(
+                text = "No data yet",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        } else {
+            CpuLineGraph(dataPoints = dataPoints)
+        }
+    }
+}
+
+@Composable
+fun CpuLineGraph(
+    dataPoints: List<Pair<Float, Float>>,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier.fillMaxSize()) {
+        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+            if (dataPoints.isEmpty()) return@Canvas
+
+            val padding = 40.dp.toPx()
+            val graphWidth = size.width - (padding * 2)
+            val graphHeight = size.height - (padding * 2)
+
+            val minValue = 0f
+            val maxValue = 100f
+            val range = maxValue - minValue
+
+            // Draw grid background
+            val gridLines = 4
+            for (i in 0..gridLines) {
+                val y = padding + (graphHeight / gridLines) * i
+                drawLine(
+                    color = Surface.copy(alpha = 0.3f),
+                    start = androidx.compose.ui.geometry.Offset(padding, y),
+                    end = androidx.compose.ui.geometry.Offset(size.width - padding, y),
+                    strokeWidth = 1f
+                )
+            }
+
+            // Draw vertical grid lines
+            val verticalGridLines = minOf(dataPoints.size - 1, 10)
+            if (verticalGridLines > 0) {
+                for (i in 0..verticalGridLines) {
+                    val x = padding + (graphWidth / verticalGridLines) * i
+                    drawLine(
+                        color = Surface.copy(alpha = 0.2f),
+                        start = androidx.compose.ui.geometry.Offset(x, padding),
+                        end = androidx.compose.ui.geometry.Offset(x, size.height - padding),
+                        strokeWidth = 0.5f
+                    )
+                }
+            }
+
+            // Draw axes
+            drawLine(
+                color = OnSurface,
+                start = androidx.compose.ui.geometry.Offset(padding, padding),
+                end = androidx.compose.ui.geometry.Offset(padding, size.height - padding),
+                strokeWidth = 2f
+            )
+            drawLine(
+                color = OnSurface,
+                start = androidx.compose.ui.geometry.Offset(padding, size.height - padding),
+                end = androidx.compose.ui.geometry.Offset(size.width - padding, size.height - padding),
+                strokeWidth = 2f
+            )
+
+            // Draw Y-axis labels (0, 25, 50, 75, 100)
+            // Plot line
+            val points = dataPoints.mapIndexed { index, (_, value) ->
+                val x = padding + (graphWidth / maxOf(dataPoints.size - 1, 1)) * index
+                val normalizedValue = (value - minValue) / range
+                val y = (size.height - padding) - (normalizedValue * graphHeight)
+                androidx.compose.ui.geometry.Offset(x, y)
+            }
+
+            // Draw line segments
+            for (i in 0 until points.size - 1) {
+                drawLine(
+                    color = when {
+                        dataPoints[i].second > 80f -> StatusRed
+                        dataPoints[i].second > 60f -> StatusYellow
+                        else -> Primary
+                    },
+                    start = points[i],
+                    end = points[i + 1],
+                    strokeWidth = 2.5f
+                )
+            }
+
+            // Draw data point circles
+            points.forEachIndexed { index, point ->
+                drawCircle(
+                    color = when {
+                        dataPoints[index].second > 80f -> StatusRed
+                        dataPoints[index].second > 60f -> StatusYellow
+                        else -> Primary
+                    },
+                    radius = 3f,
+                    center = point
+                )
+            }
+
+            // Draw current point highlight
+            if (points.isNotEmpty()) {
+                drawCircle(
+                    color = when {
+                        dataPoints.last().second > 80f -> StatusRed
+                        dataPoints.last().second > 60f -> StatusYellow
+                        else -> Primary
+                    },
+                    radius = 5f,
+                    center = points.last()
+                )
+            }
+        }
+
+        // Y-axis labels
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(32.dp)
+                .padding(top = 8.dp, bottom = 36.dp),
+            verticalArrangement = Arrangement.SpaceEvenly,
+            horizontalAlignment = Alignment.End
+        ) {
+            listOf(100, 75, 50, 25, 0).forEach { value ->
+                Text(
+                    text = "$value%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = MaterialTheme.typography.labelSmall.fontSize * 0.8f
+                )
+            }
+        }
+
+        // X-axis label (time)
+        Text(
+            text = "Time →",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = MaterialTheme.typography.labelSmall.fontSize * 0.8f,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 4.dp)
+        )
+    }
+}
+

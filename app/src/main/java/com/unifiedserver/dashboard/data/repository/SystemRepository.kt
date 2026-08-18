@@ -65,4 +65,45 @@ class SystemRepository @Inject constructor(
             throw Exception("HTTP ${response.code()}: ${response.message()}")
         }
     }
+
+    suspend fun getCpuMetrics(hours: Int = 1): Result<CpuMetrics> = runCatching {
+        val service = buildApiService(preferencesManager)
+        val response = service.getCpuHistory(hours)
+        if (response.isSuccessful) {
+            val historyResponse = response.body() ?: CpuHistoryResponse()
+            transformCpuHistory(historyResponse)
+        } else {
+            throw Exception("HTTP ${response.code()}: ${response.message()}")
+        }
+    }
+
+    private fun transformCpuHistory(history: CpuHistoryResponse): CpuMetrics {
+        if (history.samples.isEmpty()) {
+            return CpuMetrics()
+        }
+
+        val usageValues = history.samples.map { it.v }
+        val currentUsage = usageValues.lastOrNull() ?: 0f
+        val averageUsage = usageValues.average().toFloat()
+        val maxUsage = usageValues.maxOrNull() ?: 0f
+        val minUsage = usageValues.minOrNull() ?: 0f
+        val lastUpdated = history.samples.lastOrNull()?.t?.times(1000L) ?: System.currentTimeMillis()
+
+        val dataPoints = history.samples.map { sample ->
+            CpuDataPoint(
+                timestamp = sample.t * 1000L,
+                usage = sample.v
+            )
+        }
+
+        return CpuMetrics(
+            currentUsage = currentUsage,
+            averageUsage = averageUsage,
+            maxUsage = maxUsage,
+            minUsage = minUsage,
+            dataPoints = dataPoints,
+            lastUpdated = lastUpdated,
+            cpuCount = 0
+        )
+    }
 }

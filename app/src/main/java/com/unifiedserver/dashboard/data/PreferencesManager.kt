@@ -23,12 +23,10 @@ class PreferencesManager(private val dataStore: DataStore<Preferences>) {
         val AUTO_STOP_SEEDING_TIME = intPreferencesKey("auto_stop_seeding_time")
         val AUTO_STOP_RATIO = floatPreferencesKey("auto_stop_ratio")
         val SETUP_COMPLETE = booleanPreferencesKey("setup_complete")
-
-        const val DEFAULT_SERVER_URL = "http://192.168.1.100:3001"
     }
 
     val serverUrl: Flow<String> = dataStore.data.map { preferences ->
-        preferences[SERVER_URL] ?: DEFAULT_SERVER_URL
+        preferences[SERVER_URL] ?: ""
     }
 
     val tmdbApiKey: Flow<String> = dataStore.data.map { preferences ->

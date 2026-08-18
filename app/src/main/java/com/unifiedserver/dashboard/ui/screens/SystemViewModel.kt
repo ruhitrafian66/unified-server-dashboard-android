@@ -19,6 +19,7 @@ data class SystemUiState(
     val services: List<ServiceStatus> = emptyList(),
     val disks: List<DiskDevice> = emptyList(),
     val dockerContainers: List<DockerContainer> = emptyList(),
+    val cpuMetrics: CpuMetrics? = null,
     val snackbarMessage: String? = null
 )
 
@@ -56,11 +57,13 @@ class SystemViewModel @Inject constructor(
             val servicesDeferred = async { repository.getServices() }
             val disksDeferred = async { repository.getDisks() }
             val dockerDeferred = async { repository.getDockerContainers() }
+            val cpuDeferred = async { repository.getCpuMetrics(hours = 1) }
 
             val systemResult = systemDeferred.await()
             val servicesResult = servicesDeferred.await()
             val disksResult = disksDeferred.await()
             val dockerResult = dockerDeferred.await()
+            val cpuResult = cpuDeferred.await()
 
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
@@ -68,6 +71,7 @@ class SystemViewModel @Inject constructor(
                 services = servicesResult.getOrNull() ?: emptyList(),
                 disks = disksResult.getOrNull() ?: emptyList(),
                 dockerContainers = dockerResult.getOrNull() ?: emptyList(),
+                cpuMetrics = cpuResult.getOrNull(),
                 error = systemResult.exceptionOrNull()?.message
             )
         }

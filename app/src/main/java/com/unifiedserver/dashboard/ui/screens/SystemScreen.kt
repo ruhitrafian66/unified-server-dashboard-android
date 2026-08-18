@@ -66,6 +66,22 @@ fun SystemScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
+                    // CPU Monitoring
+                    uiState.cpuMetrics?.let { metrics ->
+                        item { SectionHeader("CPU Monitoring") }
+                        item {
+                            CpuGraphCard(
+                                currentUsage = metrics.currentUsage,
+                                averageUsage = metrics.averageUsage,
+                                maxUsage = metrics.maxUsage,
+                                minUsage = metrics.minUsage,
+                                dataPoints = metrics.dataPoints.map { it.usage to it.usage },
+                                cpuCount = metrics.cpuCount,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                        }
+                    }
+
                     // System Info
                     uiState.systemInfo?.let { info ->
                         item { SectionHeader("System Resources") }

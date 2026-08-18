@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class SetupUiState(
-    val serverUrl: String = PreferencesManager.DEFAULT_SERVER_URL,
+    val serverUrl: String = "",
     val isTesting: Boolean = false,
     val isConfigured: Boolean = false,
     val error: String? = null

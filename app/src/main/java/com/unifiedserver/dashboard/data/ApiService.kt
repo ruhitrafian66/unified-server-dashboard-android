@@ -66,6 +66,10 @@ interface ApiService {
     @POST("api/omv/power/{action}")
     suspend fun powerAction(@Path("action") action: String): Response<ApiResponse<Any>>
 
+    // ─── CPU Monitoring ──────────────────────────────────────────────────────
+    @GET("api/omv/cpu-history")
+    suspend fun getCpuHistory(@Query("hours") hours: Int = 1): Response<CpuHistoryResponse>
+
     // ─── Docker ──────────────────────────────────────────────────────────────
     // Returns { containers: [...] }
     @GET("api/docker/containers")
