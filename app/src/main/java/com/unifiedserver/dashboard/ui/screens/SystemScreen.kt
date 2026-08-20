@@ -99,7 +99,15 @@ fun SystemScreen(
                     // Disks
                     if (uiState.disks.isNotEmpty()) {
                         item { SectionHeader("Storage", modifier = Modifier.padding(top = 8.dp)) }
-                        items(uiState.disks) { disk ->
+                        // Prioritize SSD: filter for non-root disk first, then fallback to any non-root disk
+                        val disksToShow = uiState.disks.filter { 
+                            !it.device.contains("nvme0n1") && it.mountPoint != "/"
+                        }.ifEmpty {
+                            // Fallback: show disks that look like external storage
+                            uiState.disks.filter { it.device.contains("nvme") || it.device.contains("sda") }
+                        }
+                        
+                        items(disksToShow) { disk ->
                             DiskItem(disk = disk)
                         }
                     }
