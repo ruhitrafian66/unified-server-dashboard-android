@@ -74,7 +74,12 @@ class TorrentRepository @Inject constructor(
         val service = buildApiService(preferencesManager)
         val response = service.getSearchStatus(id)
         if (response.isSuccessful) {
-            response.body()?.firstOrNull() ?: SearchStatusItem(id, "unknown")
+            val statusList = response.body()
+            when {
+                statusList == null -> throw Exception("Response body is null")
+                statusList.isEmpty() -> throw Exception("Search ID $id not found on server")
+                else -> statusList.first()
+            }
         } else {
             throw Exception("HTTP ${response.code()}: ${response.message()}")
         }
@@ -84,7 +89,13 @@ class TorrentRepository @Inject constructor(
         val service = buildApiService(preferencesManager)
         val response = service.getSearchResults(id)
         if (response.isSuccessful) {
-            response.body() ?: SearchResultsResponse()
+            val results = response.body()
+            when {
+                results == null -> throw Exception("Response body is null for search results")
+                results.results.isEmpty() && results.status.isBlank() -> 
+                    throw Exception("Empty search results for ID $id")
+                else -> results
+            }
         } else {
             throw Exception("HTTP ${response.code()}: ${response.message()}")
         }

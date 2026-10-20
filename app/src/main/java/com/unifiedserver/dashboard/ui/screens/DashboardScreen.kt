@@ -165,10 +165,15 @@ fun SystemInfoCards(info: SystemInfo, disks: List<DiskDevice> = emptyList()) {
         if (info.memory.isNotBlank()) {
             SystemInfoRow(label = "Memory", value = info.memory)
         }
-        // Disk: find a non-root disk (likely SSD), otherwise show root
+        // Disk: prioritize external SSDs/storage over boot drive (mmcblk0)
         if (disks.isNotEmpty()) {
-            val ssdDisk = disks.find { !it.device.contains("nvme0n1") && it.mountPoint != "/" } 
-                ?: disks.find { it.device.contains("nvme0n1") || it.device.contains("sda") }
+            val ssdDisk = disks.find { disk ->
+                // Exclude boot drives and root mount points
+                !disk.device.contains("mmcblk0") && disk.mountPoint != "/" && disk.mountPoint != "/boot"
+            } ?: disks.find { disk ->
+                // Fallback: look for common SSD/external storage patterns
+                disk.device.contains("nvme0n1") || disk.device.contains("sda") || disk.device.contains("mmcblk1")
+            }
             
             if (ssdDisk != null) {
                 SystemInfoRow(

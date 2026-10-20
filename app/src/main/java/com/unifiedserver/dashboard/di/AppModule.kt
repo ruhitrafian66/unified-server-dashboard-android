@@ -7,6 +7,7 @@ import com.unifiedserver.dashboard.data.ApiService
 import com.unifiedserver.dashboard.data.PreferencesManager
 import com.unifiedserver.dashboard.data.dataStore
 import com.unifiedserver.dashboard.data.repository.DashboardRepository
+import com.unifiedserver.dashboard.data.repository.MediaRepository
 import com.unifiedserver.dashboard.data.repository.ShowsRepository
 import com.unifiedserver.dashboard.data.repository.SystemRepository
 import com.unifiedserver.dashboard.data.repository.TorrentRepository
@@ -104,5 +105,13 @@ object AppModule {
         preferencesManager: PreferencesManager
     ): SystemRepository {
         return SystemRepository(apiService, preferencesManager)
+    }
+
+    @Provides
+    @Singleton
+    fun provideMediaRepository(
+        preferencesManager: PreferencesManager
+    ): MediaRepository {
+        return MediaRepository(preferencesManager)
     }
 }

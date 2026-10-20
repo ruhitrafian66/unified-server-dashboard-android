@@ -126,59 +126,122 @@ class TorrentsViewModel @Inject constructor(
 
     fun startSearch(query: String) {
         viewModelScope.launch {
+            // Validate search query
+            if (query.isBlank()) {
+                _uiState.value = _uiState.value.copy(
+                    searchError = "Search query cannot be empty"
+                )
+                return@launch
+            }
+
             _uiState.value = _uiState.value.copy(
                 searchQuery = query,
                 isSearching = true,
                 searchResults = emptyList(),
-                searchError = null
+                searchError = null,
+                searchStatus = "Initializing..."
             )
             repository.startSearch(query)
                 .onSuccess { id ->
+                    // Validate search ID
+                    if (id <= 0) {
+                        _uiState.value = _uiState.value.copy(
+                            isSearching = false,
+                            searchError = "Invalid search ID returned from server"
+                        )
+                        return@onSuccess
+                    }
                     _uiState.value = _uiState.value.copy(searchId = id)
-                    // Call suspend function directly within the coroutine scope
-                    pollSearchStatus(id)
+                    // Poll for results with progressive fetching
+                    pollForResults(id)
                 }
                 .onFailure { e ->
                     _uiState.value = _uiState.value.copy(
                         isSearching = false,
-                        searchError = e.message
+                        searchError = "Failed to start search: ${e.message}"
                     )
                 }
         }
     }
 
-    private suspend fun pollSearchStatus(id: Int) {
-        var running = true
-        while (running) {
+    private suspend fun pollForResults(id: Int) {
+        val maxAttempts = 150 // 5 minutes with 2-second intervals
+        var attempts = 0
+        var lastResultCount = 0
+        var noChangeCount = 0
+        
+        // Wait 3 seconds for backend to start gathering results
+        kotlinx.coroutines.delay(3000)
+        
+        while (attempts < maxAttempts) {
+            attempts++
             repository.getSearchStatus(id)
                 .onSuccess { statusItem ->
-                    _uiState.value = _uiState.value.copy(searchStatus = statusItem.status)
-                    if (statusItem.status.equals("Stopped", ignoreCase = true)) {
-                        running = false
-                        fetchSearchResults(id)
+                    _uiState.value = _uiState.value.copy(
+                        searchStatus = "${statusItem.status} (${statusItem.total} found)"
+                    )
+                }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        searchStatus = "Fetching results..."
+                    )
+                }
+            
+            // Fetch results regardless of status
+            repository.getSearchResults(id)
+                .onSuccess { results ->
+                    _uiState.value = _uiState.value.copy(
+                        searchResults = results.results,
+                        searchStatus = "${results.status} (${results.total} found)"
+                    )
+                    
+                    // Check if we've stopped getting new results
+                    if (results.results.size == lastResultCount && results.results.isNotEmpty()) {
+                        noChangeCount++
+                        // If no new results after 3 checks (6 seconds), consider search complete
+                        if (noChangeCount >= 3 || results.status.equals("Stopped", ignoreCase = true)) {
+                            _uiState.value = _uiState.value.copy(isSearching = false)
+                            return@onSuccess
+                        }
+                    } else {
+                        noChangeCount = 0
                     }
+                    lastResultCount = results.results.size
                 }
-                .onFailure {
-                    running = false
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        searchStatus = "Error: ${e.message}"
+                    )
                 }
-            if (running) kotlinx.coroutines.delay(2000)
+            
+            if (attempts < maxAttempts) {
+                kotlinx.coroutines.delay(2000)
+            }
         }
+        
+        // Timeout fallback
+        _uiState.value = _uiState.value.copy(
+            isSearching = false,
+            searchStatus = "Search completed or timed out"
+        )
     }
 
-    private suspend fun fetchSearchResults(id: Int) {
-        repository.getSearchResults(id)
-            .onSuccess { results ->
-                _uiState.value = _uiState.value.copy(
-                    isSearching = false,
-                    searchResults = results.results
-                )
-            }
-            .onFailure { e ->
-                _uiState.value = _uiState.value.copy(
-                    isSearching = false,
-                    searchError = e.message
-                )
-            }
+    fun refreshSearchResults() {
+        val id = _uiState.value.searchId ?: return
+        viewModelScope.launch {
+            repository.getSearchResults(id)
+                .onSuccess { results ->
+                    _uiState.value = _uiState.value.copy(
+                        searchResults = results.results,
+                        searchStatus = "${results.status} (${results.total} found)"
+                    )
+                }
+                .onFailure { e ->
+                    _uiState.value = _uiState.value.copy(
+                        searchError = "Failed to refresh results: ${e.message}"
+                    )
+                }
+        }
     }
 
     fun stopSearch() {

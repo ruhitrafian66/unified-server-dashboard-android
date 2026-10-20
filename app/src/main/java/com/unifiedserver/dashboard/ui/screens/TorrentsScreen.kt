@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -473,6 +474,7 @@ fun TorrentSearchSheet(
 ) {
     var query by remember { mutableStateOf(uiState.searchQuery) }
     var showSortMenu by remember { mutableStateOf(false) }
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     ModalBottomSheet(
         onDismissRequest = {
@@ -566,7 +568,11 @@ fun TorrentSearchSheet(
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
-                    if (query.isNotBlank()) onSearch(query)
+                    if (query.isNotBlank()) {
+                        keyboardController?.hide()
+                        onSearch(query)
+                        query = ""
+                    }
                 }),
                 trailingIcon = {
                     if (query.isNotBlank()) {
@@ -588,7 +594,13 @@ fun TorrentSearchSheet(
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
-                    onClick = { if (query.isNotBlank()) onSearch(query) },
+                    onClick = {
+                        if (query.isNotBlank()) {
+                            keyboardController?.hide()
+                            onSearch(query)
+                            query = ""
+                        }
+                    },
                     enabled = query.isNotBlank() && !uiState.isSearching,
                     colors = ButtonDefaults.buttonColors(containerColor = Primary)
                 ) {

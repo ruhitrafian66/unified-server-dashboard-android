@@ -303,3 +303,110 @@ data class ApiResponse<T>(
     val message: String? = null,
     val error: String? = null
 )
+
+// ─── Media Discovery (TMDB direct API) ───────────────────────────────────────
+
+data class TmdbMediaItem(
+    val id: Int = 0,
+    val title: String = "",           // movies use "title"
+    val name: String = "",            // TV shows use "name"
+    val overview: String = "",
+    @SerializedName("poster_path") val posterPath: String? = null,
+    @SerializedName("backdrop_path") val backdropPath: String? = null,
+    @SerializedName("release_date") val releaseDate: String? = null,       // movies
+    @SerializedName("first_air_date") val firstAirDate: String? = null,    // TV
+    @SerializedName("vote_average") val voteAverage: Float = 0f,
+    @SerializedName("vote_count") val voteCount: Int = 0,
+    @SerializedName("media_type") val mediaType: String? = null,           // "movie" or "tv"
+    val popularity: Float = 0f,
+    @SerializedName("genre_ids") val genreIds: List<Int> = emptyList()
+) {
+    val displayTitle: String get() = title.ifBlank { name }
+    val displayDate: String get() = releaseDate ?: firstAirDate ?: ""
+    val year: String get() = displayDate.take(4)
+    val posterUrl: String? get() = posterPath?.let { "https://image.tmdb.org/t/p/w342$it" }
+    val backdropUrl: String? get() = backdropPath?.let { "https://image.tmdb.org/t/p/w780$it" }
+}
+
+data class TmdbTrendingResponse(
+    val page: Int = 1,
+    val results: List<TmdbMediaItem> = emptyList(),
+    @SerializedName("total_pages") val totalPages: Int = 1,
+    @SerializedName("total_results") val totalResults: Int = 0
+)
+
+data class TmdbSearchMultiResponse(
+    val page: Int = 1,
+    val results: List<TmdbMediaItem> = emptyList(),
+    @SerializedName("total_pages") val totalPages: Int = 1,
+    @SerializedName("total_results") val totalResults: Int = 0
+)
+
+data class TmdbMovieDetail(
+    val id: Int = 0,
+    val title: String = "",
+    val overview: String = "",
+    val tagline: String = "",
+    @SerializedName("poster_path") val posterPath: String? = null,
+    @SerializedName("backdrop_path") val backdropPath: String? = null,
+    @SerializedName("release_date") val releaseDate: String? = null,
+    val runtime: Int? = null,
+    @SerializedName("vote_average") val voteAverage: Float = 0f,
+    @SerializedName("vote_count") val voteCount: Int = 0,
+    val status: String = "",
+    val genres: List<TmdbGenre> = emptyList(),
+    @SerializedName("imdb_id") val imdbId: String? = null,
+    val popularity: Float = 0f,
+    @SerializedName("external_ids") val externalIds: TmdbExternalIds? = null
+) {
+    val year: String get() = releaseDate?.take(4) ?: ""
+    val posterUrl: String? get() = posterPath?.let { "https://image.tmdb.org/t/p/w342$it" }
+    val backdropUrl: String? get() = backdropPath?.let { "https://image.tmdb.org/t/p/w780$it" }
+}
+
+data class TmdbTvDetail(
+    val id: Int = 0,
+    val name: String = "",
+    val overview: String = "",
+    val tagline: String = "",
+    @SerializedName("poster_path") val posterPath: String? = null,
+    @SerializedName("backdrop_path") val backdropPath: String? = null,
+    @SerializedName("first_air_date") val firstAirDate: String? = null,
+    @SerializedName("last_air_date") val lastAirDate: String? = null,
+    @SerializedName("number_of_seasons") val numberOfSeasons: Int = 0,
+    @SerializedName("number_of_episodes") val numberOfEpisodes: Int = 0,
+    @SerializedName("vote_average") val voteAverage: Float = 0f,
+    @SerializedName("vote_count") val voteCount: Int = 0,
+    val status: String = "",
+    val genres: List<TmdbGenre> = emptyList(),
+    @SerializedName("external_ids") val externalIds: TmdbExternalIds? = null
+) {
+    val year: String get() = firstAirDate?.take(4) ?: ""
+    val posterUrl: String? get() = posterPath?.let { "https://image.tmdb.org/t/p/w342$it" }
+    val backdropUrl: String? get() = backdropPath?.let { "https://image.tmdb.org/t/p/w780$it" }
+}
+
+data class TmdbGenre(
+    val id: Int = 0,
+    val name: String = ""
+)
+
+data class TmdbExternalIds(
+    @SerializedName("imdb_id") val imdbId: String? = null
+)
+
+data class ImdbRatingResponse(
+    @SerializedName("Title") val title: String = "",
+    @SerializedName("Year") val year: String = "",
+    @SerializedName("Rated") val rated: String = "",
+    @SerializedName("Runtime") val runtime: String = "",
+    @SerializedName("Genre") val genre: String = "",
+    @SerializedName("Director") val director: String = "",
+    @SerializedName("Actors") val actors: String = "",
+    @SerializedName("Plot") val plot: String = "",
+    @SerializedName("imdbRating") val imdbRating: String = "N/A",
+    @SerializedName("imdbVotes") val imdbVotes: String = "",
+    @SerializedName("imdbID") val imdbId: String = "",
+    @SerializedName("Type") val type: String = "",
+    @SerializedName("Response") val response: String = "False"
+)
