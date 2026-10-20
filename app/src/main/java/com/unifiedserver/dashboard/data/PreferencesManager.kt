@@ -19,6 +19,7 @@ class PreferencesManager(private val dataStore: DataStore<Preferences>) {
     companion object {
         val SERVER_URL = stringPreferencesKey("server_url")
         val TMDB_API_KEY = stringPreferencesKey("tmdb_api_key")
+        val OMDB_API_KEY = stringPreferencesKey("omdb_api_key")
         val AUTO_STOP_ENABLED = booleanPreferencesKey("auto_stop_enabled")
         val AUTO_STOP_SEEDING_TIME = intPreferencesKey("auto_stop_seeding_time")
         val AUTO_STOP_RATIO = floatPreferencesKey("auto_stop_ratio")
@@ -31,6 +32,12 @@ class PreferencesManager(private val dataStore: DataStore<Preferences>) {
 
     val tmdbApiKey: Flow<String> = dataStore.data.map { preferences ->
         preferences[TMDB_API_KEY] ?: ""
+    }
+
+    val omdbApiKey: Flow<String> = dataStore.data.map { it[OMDB_API_KEY] ?: "" }
+
+    suspend fun updateOmdbApiKey(key: String) {
+        dataStore.edit { it[OMDB_API_KEY] = key }
     }
 
     val autoStopEnabled: Flow<Boolean> = dataStore.data.map { preferences ->
@@ -52,6 +59,21 @@ class PreferencesManager(private val dataStore: DataStore<Preferences>) {
     suspend fun updateServerUrl(url: String) {
         dataStore.edit { preferences ->
             preferences[SERVER_URL] = url
+        }
+    }
+
+    suspend fun configureServer(url: String) {
+        dataStore.edit {
+            it[SERVER_URL] = url
+            it[SETUP_COMPLETE] = true
+        }
+    }
+
+    suspend fun updateAutoStopConfig(enabled: Boolean, minutes: Int, ratio: Float) {
+        dataStore.edit {
+            it[AUTO_STOP_ENABLED] = enabled
+            it[AUTO_STOP_SEEDING_TIME] = minutes
+            it[AUTO_STOP_RATIO] = ratio
         }
     }
 

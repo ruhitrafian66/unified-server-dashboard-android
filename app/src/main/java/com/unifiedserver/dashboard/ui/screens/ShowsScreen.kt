@@ -1,9 +1,13 @@
 package com.unifiedserver.dashboard.ui.screens
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -13,6 +17,7 @@ import androidx.compose.material.icons.filled.Queue
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
@@ -31,18 +36,15 @@ import com.unifiedserver.dashboard.ui.theme.*
 fun ShowsScreen(
     viewModel: ShowsViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var showAddDialog by remember { mutableStateOf(false) }
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showQueueSheet by remember { mutableStateOf(false) }
+    var deleteShow by remember { mutableStateOf<Show?>(null) }
+    var confirmClearQueue by rememberSaveable { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(30_000)
-            viewModel.loadQueueStatus()
-        }
-    }
+    RefreshWhileVisible(30_000) { viewModel.refresh() }
 
     LaunchedEffect(uiState.snackbarMessage) {
         uiState.snackbarMessage?.let { message ->
@@ -54,12 +56,13 @@ fun ShowsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("TV Shows", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Tracked shows", style = MaterialTheme.typography.titleLarge) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Surface,
                     titleContentColor = OnSurface
                 ),
                 actions = {
+                    com.unifiedserver.dashboard.ui.navigation.SettingsAction()
                     uiState.queueStatus?.let { queue ->
                         if (queue.queueLength > 0 || queue.processing) {
                             IconButton(onClick = { showQueueSheet = true }) {
@@ -185,7 +188,7 @@ fun ShowsScreen(
                                 show = show,
                                 onToggleStatus = { viewModel.toggleShowStatus(show) },
                                 onDownloadSeason = { viewModel.downloadSeason(show) },
-                                onDelete = { viewModel.deleteShow(show.id) }  // id is String
+                                onDelete = { deleteShow = show }
                             )
                         }
                         item { Spacer(modifier = Modifier.height(80.dp)) }
@@ -208,9 +211,10 @@ fun ShowsScreen(
                 showAddDialog = false
             },
             onAdd = { name, tmdbId, season, episode ->
-                viewModel.addShow(name, tmdbId, season, episode)
-                viewModel.clearTmdbSearch()
-                showAddDialog = false
+                    viewModel.addShow(name, tmdbId, season, episode) {
+                        viewModel.clearTmdbSearch()
+                        showAddDialog = false
+                    }
             }
         )
     }
@@ -219,11 +223,24 @@ fun ShowsScreen(
         QueueStatusSheet(
             queueStatus = uiState.queueStatus,
             onClear = {
-                viewModel.clearQueue()
-                showQueueSheet = false
+                confirmClearQueue = true
             },
             onDismiss = { showQueueSheet = false }
         )
+    }
+    deleteShow?.let { show ->
+        AlertDialog(onDismissRequest = { deleteShow = null }, title = { Text("Stop tracking this show?") },
+            text = { Text("Remove \"${show.name}\" from tracked shows? Downloaded files are not deleted.") },
+            confirmButton = { TextButton(onClick = { viewModel.deleteShow(show.id); deleteShow = null }) { Text("Remove") } },
+            dismissButton = { TextButton(onClick = { deleteShow = null }) { Text("Cancel") } })
+    }
+    if (confirmClearQueue) {
+        AlertDialog(onDismissRequest = { confirmClearQueue = false }, title = { Text("Clear download queue?") },
+            text = { Text("Remove all queued episode requests? This does not remove existing downloads.") },
+            confirmButton = { TextButton(onClick = {
+                viewModel.clearQueue(); confirmClearQueue = false; showQueueSheet = false
+            }) { Text("Clear queue") } },
+            dismissButton = { TextButton(onClick = { confirmClearQueue = false }) { Text("Cancel") } })
     }
 }
 
@@ -279,10 +296,10 @@ fun AddShowDialog(
     onDismiss: () -> Unit,
     onAdd: (name: String, tmdbId: Int?, season: Int, episode: Int) -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var manualName by remember { mutableStateOf("") }
-    var season by remember { mutableStateOf("1") }
-    var episode by remember { mutableStateOf("1") }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var manualName by rememberSaveable { mutableStateOf("") }
+    var season by rememberSaveable { mutableStateOf("1") }
+    var episode by rememberSaveable { mutableStateOf("1") }
     var selectedResult by remember { mutableStateOf<TmdbSearchResult?>(null) }
     var useManual by remember { mutableStateOf(!isTmdbConfigured) }
 
@@ -293,6 +310,8 @@ fun AddShowDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
             Text("Add TV Show", style = MaterialTheme.typography.titleMedium, color = OnSurface)
@@ -332,7 +351,7 @@ fun AddShowDialog(
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Primary, strokeWidth = 2.dp)
                         } else if (searchQuery.isNotBlank()) {
                             IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Filled.Close, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.Filled.Close, contentDescription = "Clear show search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     },
@@ -387,7 +406,7 @@ fun AddShowDialog(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            val nameForDisplay = selectedResult?.name ?: manualName
+            val nameForDisplay = if (useManual) manualName else selectedResult?.name.orEmpty()
             if (nameForDisplay.isNotBlank()) {
                 Text(
                     text = "Show: $nameForDisplay",
@@ -440,12 +459,12 @@ fun AddShowDialog(
                     Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                val finalName = selectedResult?.name ?: manualName
+                val finalName = if (useManual) manualName else selectedResult?.name.orEmpty()
                 Button(
                     onClick = {
                         onAdd(
                             finalName,
-                            selectedResult?.id,
+                            if (useManual) null else selectedResult?.id,
                             season.toIntOrNull() ?: 1,
                             episode.toIntOrNull() ?: 1
                         )

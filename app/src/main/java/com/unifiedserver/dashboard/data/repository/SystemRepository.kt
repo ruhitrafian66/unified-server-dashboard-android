@@ -6,11 +6,10 @@ import com.unifiedserver.dashboard.data.models.*
 import javax.inject.Inject
 
 class SystemRepository @Inject constructor(
-    private val apiService: ApiService,
     private val preferencesManager: PreferencesManager
 ) {
 
-    suspend fun getSystemInfo(): Result<SystemInfo> = runCatching {
+    suspend fun getSystemInfo(): Result<SystemInfo> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getSystemInfo()
         if (response.isSuccessful) {
@@ -20,7 +19,7 @@ class SystemRepository @Inject constructor(
         }
     }
 
-    suspend fun getServices(): Result<List<ServiceStatus>> = runCatching {
+    suspend fun getServices(): Result<List<ServiceStatus>> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getServices()
         if (response.isSuccessful) {
@@ -30,7 +29,7 @@ class SystemRepository @Inject constructor(
         }
     }
 
-    suspend fun getDisks(): Result<List<DiskDevice>> = runCatching {
+    suspend fun getDisks(): Result<List<DiskDevice>> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getDisks()
         if (response.isSuccessful) {
@@ -40,7 +39,7 @@ class SystemRepository @Inject constructor(
         }
     }
 
-    suspend fun getDockerContainers(): Result<List<DockerContainer>> = runCatching {
+    suspend fun getDockerContainers(): Result<List<DockerContainer>> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getDockerContainers()
         if (response.isSuccessful) {
@@ -50,23 +49,19 @@ class SystemRepository @Inject constructor(
         }
     }
 
-    suspend fun reboot(): Result<Unit> = runCatching {
+    suspend fun reboot(): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.powerAction("reboot")
-        if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+        response.requireSuccess()
     }
 
-    suspend fun shutdown(): Result<Unit> = runCatching {
+    suspend fun shutdown(): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.powerAction("shutdown")
-        if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+        response.requireSuccess()
     }
 
-    suspend fun getCpuMetrics(hours: Int = 1): Result<CpuMetrics> = runCatching {
+    suspend fun getCpuMetrics(hours: Int = 1): Result<CpuMetrics> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getCpuHistory(hours)
         if (response.isSuccessful) {

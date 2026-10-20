@@ -39,8 +39,6 @@ fun MediaDetailSheet(
     onDismiss: () -> Unit,
     onDownload: () -> Unit
 ) {
-    val isMovie = (item.mediaType ?: "movie") == "movie"
-
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = Background,
@@ -292,12 +290,7 @@ fun MediaDetailSheet(
                     } else {
                         Icon(Icons.Filled.Download, contentDescription = null, tint = OnPrimary)
                         Spacer(modifier = Modifier.width(8.dp))
-                        val title = (movieDetail?.title ?: tvDetail?.name ?: item.displayTitle).let {
-                            if (it.length > 20) it.take(20) + "…" else it
-                        }
-                        val year = movieDetail?.year ?: tvDetail?.year ?: item.year
-                        val query = if (year.isNotBlank()) "$title $year" else title
-                        Text("Download  \"$query\"", color = OnPrimary, fontWeight = FontWeight.SemiBold)
+                        Text("Find sources", color = OnPrimary, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unifiedserver.dashboard.data.PreferencesManager
 import com.unifiedserver.dashboard.data.repository.DashboardRepository
+import com.unifiedserver.dashboard.data.repository.normalizeServerUrl
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,17 +37,22 @@ class SetupViewModel @Inject constructor(
     }
 
     fun testAndSave(url: String) {
-        if (url.isBlank()) return
+        if (_uiState.value.isTesting) return
+        val normalized = try {
+            normalizeServerUrl(url)
+        } catch (e: IllegalArgumentException) {
+            _uiState.value = _uiState.value.copy(error = e.message)
+            return
+        }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isTesting = true, error = null)
-            preferencesManager.updateServerUrl(url)
-            dashboardRepository.getHealth()
+            dashboardRepository.testServer(normalized)
                 .onSuccess {
-                    preferencesManager.setSetupComplete(true)
+                    preferencesManager.configureServer(normalized)
                     _uiState.value = _uiState.value.copy(
                         isTesting = false,
                         isConfigured = true,
-                        serverUrl = url
+                        serverUrl = normalized
                     )
                 }
                 .onFailure { e ->

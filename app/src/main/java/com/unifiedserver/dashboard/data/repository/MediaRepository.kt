@@ -5,147 +5,69 @@ import com.unifiedserver.dashboard.data.PreferencesManager
 import com.unifiedserver.dashboard.data.TmdbApiService
 import com.unifiedserver.dashboard.data.models.*
 import kotlinx.coroutines.flow.first
-import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
+import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
-class MediaRepository @Inject constructor(
-    private val preferencesManager: PreferencesManager
-) {
-    companion object {
-        private const val TMDB_BASE_URL = "https://api.themoviedb.org/"
-        private const val OMDB_BASE_URL = "https://www.omdbapi.com/"
-        // Hardcoded free OMDb API key – get your own at https://www.omdbapi.com/apikey.aspx
-        // Replace this with a real key or let the user configure it.
-        private const val OMDB_API_KEY = "trilogy"   // fallback public key (limited)
-    }
+open class MediaRepository @Inject constructor(private val preferencesManager: PreferencesManager) {
+    private val tmdb by lazy { service("https://api.themoviedb.org/", TmdbApiService::class.java) }
+    private val omdb by lazy { service("https://www.omdbapi.com/", OmdbApiService::class.java) }
 
-    private fun buildOkHttp(): OkHttpClient {
-        val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.NONE
-        }
-        return OkHttpClient.Builder()
-            .addInterceptor(logging)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .build()
-    }
-
-    private fun buildTmdbService(): TmdbApiService = Retrofit.Builder()
-        .baseUrl(TMDB_BASE_URL)
-        .client(buildOkHttp())
+    private fun <T> service(url: String, type: Class<T>): T = Retrofit.Builder()
+        .baseUrl(url)
+        .client(BackendClient.httpClient)
         .addConverterFactory(GsonConverterFactory.create())
-        .build()
-        .create(TmdbApiService::class.java)
+        .build().create(type)
 
-    private fun buildOmdbService(): OmdbApiService = Retrofit.Builder()
-        .baseUrl(OMDB_BASE_URL)
-        .client(buildOkHttp())
-        .addConverterFactory(GsonConverterFactory.create())
-        .build()
-        .create(OmdbApiService::class.java)
-
-    private suspend fun apiKey(): String = preferencesManager.tmdbApiKey.first()
-
-    // ─── Trending ─────────────────────────────────────────────────────────────
-
-    suspend fun getTrendingTv(): Result<List<TmdbMediaItem>> = runCatching {
-        val key = requireApiKey()
-        val response = buildTmdbService().getTrendingTv(key)
-        if (response.isSuccessful) {
-            response.body()?.results?.map { it.copy(mediaType = "tv") } ?: emptyList()
-        } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+    private fun <T> Response<T>.requiredBody(): T {
+        check(isSuccessful) { "Media service request failed (HTTP ${code()})." }
+        return body() ?: error("Media service returned an empty response.")
     }
 
-    suspend fun getTrendingMovies(): Result<List<TmdbMediaItem>> = runCatching {
-        val key = requireApiKey()
-        val response = buildTmdbService().getTrendingMovies(key)
-        if (response.isSuccessful) {
-            response.body()?.results?.map { it.copy(mediaType = "movie") } ?: emptyList()
-        } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+    open suspend fun getTrendingTv(): Result<List<TmdbMediaItem>> = apiResult {
+        tmdb.getTrendingTv(requireApiKey()).requiredBody().results.map { it.copy(mediaType = "tv") }
     }
 
-    // ─── Search ───────────────────────────────────────────────────────────────
-
-    suspend fun searchTv(query: String): Result<List<TmdbMediaItem>> = runCatching {
-        val key = requireApiKey()
-        val response = buildTmdbService().searchTv(key, query)
-        if (response.isSuccessful) {
-            response.body()?.results?.map { it.copy(mediaType = "tv") } ?: emptyList()
-        } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+    open suspend fun getTrendingMovies(): Result<List<TmdbMediaItem>> = apiResult {
+        tmdb.getTrendingMovies(requireApiKey()).requiredBody().results.map { it.copy(mediaType = "movie") }
     }
 
-    suspend fun searchMovies(query: String): Result<List<TmdbMediaItem>> = runCatching {
-        val key = requireApiKey()
-        val response = buildTmdbService().searchMovies(key, query)
-        if (response.isSuccessful) {
-            response.body()?.results?.map { it.copy(mediaType = "movie") } ?: emptyList()
-        } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+    suspend fun searchTv(query: String, page: Int = 1): Result<TmdbTrendingResponse> = apiResult {
+        val result = tmdb.searchTv(requireApiKey(), query, page).requiredBody()
+        result.copy(results = result.results.map { it.copy(mediaType = "tv") })
     }
 
-    suspend fun searchAll(query: String): Result<List<TmdbMediaItem>> = runCatching {
-        val key = requireApiKey()
-        val response = buildTmdbService().searchMulti(key, query)
-        if (response.isSuccessful) {
-            response.body()?.results
-                ?.filter { it.mediaType == "movie" || it.mediaType == "tv" }
-                ?: emptyList()
-        } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+    open suspend fun searchMovies(query: String, page: Int = 1): Result<TmdbTrendingResponse> = apiResult {
+        val result = tmdb.searchMovies(requireApiKey(), query, page).requiredBody()
+        result.copy(results = result.results.map { it.copy(mediaType = "movie") })
     }
 
-    // ─── Details ──────────────────────────────────────────────────────────────
-
-    suspend fun getMovieDetail(id: Int): Result<TmdbMovieDetail> = runCatching {
-        val key = requireApiKey()
-        val response = buildTmdbService().getMovieDetail(id, key)
-        if (response.isSuccessful) {
-            response.body() ?: throw Exception("Empty response body")
-        } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+    suspend fun searchAll(query: String, page: Int = 1): Result<TmdbTrendingResponse> = apiResult {
+        val result = tmdb.searchMulti(requireApiKey(), query, page).requiredBody()
+        TmdbTrendingResponse(result.page, result.results.filter { it.mediaType in listOf("tv", "movie") },
+            result.totalPages, result.totalResults)
     }
 
-    suspend fun getTvDetail(id: Int): Result<TmdbTvDetail> = runCatching {
-        val key = requireApiKey()
-        val response = buildTmdbService().getTvDetail(id, key)
-        if (response.isSuccessful) {
-            response.body() ?: throw Exception("Empty response body")
-        } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+    open suspend fun getMovieDetail(id: Int): Result<TmdbMovieDetail> = apiResult {
+        tmdb.getMovieDetail(id, requireApiKey()).requiredBody()
     }
 
-    // ─── IMDB Rating via OMDb ─────────────────────────────────────────────────
-
-    suspend fun getImdbRating(imdbId: String): Result<ImdbRatingResponse> = runCatching {
-        val response = buildOmdbService().getRatingByImdbId(OMDB_API_KEY, imdbId)
-        if (response.isSuccessful) {
-            val body = response.body() ?: throw Exception("Empty response body")
-            if (body.response != "True") throw Exception("IMDB ID not found")
-            body
-        } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+    suspend fun getTvDetail(id: Int): Result<TmdbTvDetail> = apiResult {
+        tmdb.getTvDetail(id, requireApiKey()).requiredBody()
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
+    suspend fun getImdbRating(imdbId: String): Result<ImdbRatingResponse> = apiResult {
+        val key = preferencesManager.omdbApiKey.first()
+        check(key.isNotBlank()) { "Optional OMDb key is not configured." }
+        val result = omdb.getRatingByImdbId(key, imdbId).requiredBody()
+        check(result.response == "True") { "IMDb rating is unavailable." }
+        result
+    }
 
     private suspend fun requireApiKey(): String {
-        val key = apiKey()
-        if (key.isBlank()) throw Exception("TMDB API key not configured. Add it in Settings.")
+        val key = preferencesManager.tmdbApiKey.first()
+        check(key.isNotBlank()) { "Add your TMDB key in Settings to browse media." }
         return key
     }
 }

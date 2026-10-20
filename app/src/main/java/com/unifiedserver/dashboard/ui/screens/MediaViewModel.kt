@@ -4,261 +4,145 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unifiedserver.dashboard.data.models.*
 import com.unifiedserver.dashboard.data.repository.MediaRepository
-import com.unifiedserver.dashboard.data.repository.TorrentRepository
+import com.unifiedserver.dashboard.data.repository.DownloadHandoff
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class MediaUiState(
-    // Trending
     val trendingTv: List<TmdbMediaItem> = emptyList(),
     val trendingMovies: List<TmdbMediaItem> = emptyList(),
     val isLoadingTrending: Boolean = false,
     val trendingError: String? = null,
-
-    // Search
     val searchQuery: String = "",
     val searchResults: List<TmdbMediaItem> = emptyList(),
+    val searchPage: Int = 0,
+    val totalPages: Int = 0,
+    val totalResults: Int = 0,
     val isSearching: Boolean = false,
     val searchError: String? = null,
-
-    // Detail sheet
     val selectedItem: TmdbMediaItem? = null,
     val movieDetail: TmdbMovieDetail? = null,
     val tvDetail: TmdbTvDetail? = null,
     val imdbRating: ImdbRatingResponse? = null,
     val isLoadingDetail: Boolean = false,
     val detailError: String? = null,
-
-    // Download
     val isDownloading: Boolean = false,
-    val downloadQuery: String? = null,
     val snackbarMessage: String? = null
 )
 
 @HiltViewModel
 class MediaViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
-    private val torrentRepository: TorrentRepository
+    private val handoff: DownloadHandoff
 ) : ViewModel() {
-
     private val _uiState = MutableStateFlow(MediaUiState())
-    val uiState: StateFlow<MediaUiState> = _uiState.asStateFlow()
-
+    val uiState = _uiState.asStateFlow()
     private var searchJob: Job? = null
+    private var detailJob: Job? = null
+    private var trendingJob: Job? = null
+    private var searchType = "all"
 
-    init {
-        loadTrending()
-    }
+    init { loadTrending() }
 
     fun loadTrending() {
-        viewModelScope.launch {
+        trendingJob?.cancel()
+        trendingJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoadingTrending = true, trendingError = null)
-            val tvResult = mediaRepository.getTrendingTv()
-            val moviesResult = mediaRepository.getTrendingMovies()
+            val tv = async { mediaRepository.getTrendingTv() }
+            val movies = async { mediaRepository.getTrendingMovies() }
+            val tvResult = tv.await()
+            val movieResult = movies.await()
             _uiState.value = _uiState.value.copy(
                 isLoadingTrending = false,
-                trendingTv = tvResult.getOrElse { emptyList() },
-                trendingMovies = moviesResult.getOrElse { emptyList() },
-                trendingError = when {
-                    tvResult.isFailure && moviesResult.isFailure ->
-                        tvResult.exceptionOrNull()?.message
-                    else -> null
-                }
+                trendingTv = tvResult.getOrElse { _uiState.value.trendingTv },
+                trendingMovies = movieResult.getOrElse { _uiState.value.trendingMovies },
+                trendingError = tvResult.exceptionOrNull()?.message ?: movieResult.exceptionOrNull()?.message
             )
         }
     }
-
-    // ─── Live search with debounce ────────────────────────────────────────────
 
     fun onSearchQueryChange(query: String, mediaTypeFilter: String = "all") {
-        _uiState.value = _uiState.value.copy(searchQuery = query)
         searchJob?.cancel()
-        if (query.isBlank()) {
-            _uiState.value = _uiState.value.copy(
-                searchResults = emptyList(),
-                isSearching = false,
-                searchError = null
-            )
-            return
-        }
-        searchJob = viewModelScope.launch {
-            delay(400) // debounce 400ms
-            performSearch(query, mediaTypeFilter)
-        }
-    }
-
-    fun performSearch(query: String, mediaTypeFilter: String = "all") {
+        searchType = mediaTypeFilter
+        _uiState.value = _uiState.value.copy(searchQuery = query, searchResults = emptyList(),
+            searchPage = 0, totalPages = 0, totalResults = 0, searchError = null, isSearching = query.isNotBlank())
         if (query.isBlank()) return
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isSearching = true, searchError = null)
-            val result = when (mediaTypeFilter) {
-                "tv" -> mediaRepository.searchTv(query)
-                "movie" -> mediaRepository.searchMovies(query)
-                else -> mediaRepository.searchAll(query)
-            }
-            result
-                .onSuccess { items ->
-                    _uiState.value = _uiState.value.copy(
-                        isSearching = false,
-                        searchResults = items
-                    )
-                }
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        isSearching = false,
-                        searchError = e.message
-                    )
-                }
+        searchJob = viewModelScope.launch {
+            delay(400)
+            fetchPage(query, 1)
         }
     }
 
-    fun clearSearch() {
-        searchJob?.cancel()
-        _uiState.value = _uiState.value.copy(
-            searchQuery = "",
-            searchResults = emptyList(),
-            isSearching = false,
-            searchError = null
-        )
+    private suspend fun fetchPage(query: String, page: Int) {
+        val result = when (searchType) {
+            "tv" -> mediaRepository.searchTv(query, page)
+            "movie" -> mediaRepository.searchMovies(query, page)
+            else -> mediaRepository.searchAll(query, page)
+        }
+        if (query != _uiState.value.searchQuery) return
+        result.onSuccess { response ->
+            val items = if (page == 1) response.results else _uiState.value.searchResults + response.results
+            _uiState.value = _uiState.value.copy(isSearching = false,
+                searchResults = items.distinctBy { it.mediaType to it.id }, searchPage = response.page,
+                totalPages = response.totalPages, totalResults = response.totalResults, searchError = null)
+        }.onFailure {
+            _uiState.value = _uiState.value.copy(isSearching = false, searchError = it.message)
+        }
     }
 
-    // ─── Detail loading ───────────────────────────────────────────────────────
+    fun loadMore() {
+        val state = _uiState.value
+        if (state.isSearching || state.searchPage >= state.totalPages) return
+        _uiState.value = state.copy(isSearching = true, searchError = null)
+        searchJob = viewModelScope.launch { fetchPage(state.searchQuery, state.searchPage + 1) }
+    }
+
+    fun clearSearch() = onSearchQueryChange("", searchType)
 
     fun openDetail(item: TmdbMediaItem) {
-        _uiState.value = _uiState.value.copy(
-            selectedItem = item,
-            movieDetail = null,
-            tvDetail = null,
-            imdbRating = null,
-            isLoadingDetail = true,
-            detailError = null
-        )
-        val isMovie = (item.mediaType ?: "movie") == "movie"
-        viewModelScope.launch {
-            if (isMovie) {
-                mediaRepository.getMovieDetail(item.id)
-                    .onSuccess { detail ->
-                        _uiState.value = _uiState.value.copy(
-                            movieDetail = detail,
-                            isLoadingDetail = false
-                        )
-                        // Fetch IMDB rating if we have an imdb_id
-                        val imdbId = detail.imdbId ?: detail.externalIds?.imdbId
-                        if (!imdbId.isNullOrBlank()) {
-                            fetchImdbRating(imdbId)
-                        }
-                    }
-                    .onFailure { e ->
-                        _uiState.value = _uiState.value.copy(
-                            isLoadingDetail = false,
-                            detailError = e.message
-                        )
-                    }
+        detailJob?.cancel()
+        _uiState.value = _uiState.value.copy(selectedItem = item, movieDetail = null,
+            tvDetail = null, imdbRating = null, isLoadingDetail = true, detailError = null)
+        detailJob = viewModelScope.launch {
+            val imdbId = if (item.mediaType == "tv") {
+                val result = mediaRepository.getTvDetail(item.id)
+                _uiState.value = _uiState.value.copy(tvDetail = result.getOrNull(),
+                    isLoadingDetail = false, detailError = result.exceptionOrNull()?.message)
+                result.getOrNull()?.externalIds?.imdbId
             } else {
-                mediaRepository.getTvDetail(item.id)
-                    .onSuccess { detail ->
-                        _uiState.value = _uiState.value.copy(
-                            tvDetail = detail,
-                            isLoadingDetail = false
-                        )
-                        val imdbId = detail.externalIds?.imdbId
-                        if (!imdbId.isNullOrBlank()) {
-                            fetchImdbRating(imdbId)
-                        }
-                    }
-                    .onFailure { e ->
-                        _uiState.value = _uiState.value.copy(
-                            isLoadingDetail = false,
-                            detailError = e.message
-                        )
-                    }
+                val result = mediaRepository.getMovieDetail(item.id)
+                _uiState.value = _uiState.value.copy(movieDetail = result.getOrNull(),
+                    isLoadingDetail = false, detailError = result.exceptionOrNull()?.message)
+                result.getOrNull()?.let { it.imdbId ?: it.externalIds?.imdbId }
             }
-        }
-    }
-
-    private fun fetchImdbRating(imdbId: String) {
-        viewModelScope.launch {
-            mediaRepository.getImdbRating(imdbId)
-                .onSuccess { rating ->
-                    _uiState.value = _uiState.value.copy(imdbRating = rating)
+            if (!imdbId.isNullOrBlank()) {
+                mediaRepository.getImdbRating(imdbId).onSuccess {
+                    _uiState.value = _uiState.value.copy(imdbRating = it)
                 }
-                // Silently ignore rating failures — not critical
+            }
         }
     }
 
     fun closeDetail() {
-        _uiState.value = _uiState.value.copy(
-            selectedItem = null,
-            movieDetail = null,
-            tvDetail = null,
-            imdbRating = null,
-            detailError = null
-        )
-    }
-
-    // ─── Download via qBittorrent search ─────────────────────────────────────
-
-    fun downloadItem(item: TmdbMediaItem) {
-        val title = item.displayTitle
-        val year = item.year
-        // Format query as "Title Year" e.g. "Dune 2021"
-        val query = if (year.isNotBlank()) "$title $year" else title
-
-        _uiState.value = _uiState.value.copy(
-            isDownloading = true,
-            downloadQuery = query
-        )
-        viewModelScope.launch {
-            torrentRepository.startSearch(query)
-                .onSuccess { searchId ->
-                    _uiState.value = _uiState.value.copy(
-                        isDownloading = false,
-                        snackbarMessage = "Search started for \"$query\" in Torrents"
-                    )
-                }
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        isDownloading = false,
-                        snackbarMessage = "Failed to start download search: ${e.message}"
-                    )
-                }
-        }
+        detailJob?.cancel()
+        _uiState.value = _uiState.value.copy(selectedItem = null, movieDetail = null,
+            tvDetail = null, imdbRating = null, isLoadingDetail = false, detailError = null)
     }
 
     fun downloadFromDetail() {
         val state = _uiState.value
         val item = state.selectedItem ?: return
-
-        // Use richer detail title if available
         val title = state.movieDetail?.title ?: state.tvDetail?.name ?: item.displayTitle
         val year = state.movieDetail?.year ?: state.tvDetail?.year ?: item.year
-        val query = if (year.isNotBlank()) "$title $year" else title
-
-        _uiState.value = _uiState.value.copy(isDownloading = true, downloadQuery = query)
-        viewModelScope.launch {
-            torrentRepository.startSearch(query)
-                .onSuccess {
-                    _uiState.value = _uiState.value.copy(
-                        isDownloading = false,
-                        snackbarMessage = "Torrent search started for \"$query\""
-                    )
-                }
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        isDownloading = false,
-                        snackbarMessage = "Failed: ${e.message}"
-                    )
-                }
-        }
+        handoff.request(listOf(title, year).filter { it.isNotBlank() }.joinToString(" "))
+        closeDetail()
     }
 
-    fun clearSnackbar() {
-        _uiState.value = _uiState.value.copy(snackbarMessage = null)
-    }
+    fun clearSnackbar() { _uiState.value = _uiState.value.copy(snackbarMessage = null) }
 }

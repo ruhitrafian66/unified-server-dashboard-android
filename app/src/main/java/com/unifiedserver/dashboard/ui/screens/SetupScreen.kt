@@ -1,5 +1,7 @@
 package com.unifiedserver.dashboard.ui.screens
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -7,6 +9,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -22,8 +27,8 @@ fun SetupScreen(
     onConfigured: () -> Unit,
     viewModel: SetupViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    var serverUrl by remember { mutableStateOf(uiState.serverUrl) }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var serverUrl by rememberSaveable { mutableStateOf(uiState.serverUrl) }
 
     LaunchedEffect(uiState.serverUrl) {
         if (serverUrl.isBlank()) {
@@ -43,6 +48,8 @@ fun SetupScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
                 .padding(innerPadding)
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

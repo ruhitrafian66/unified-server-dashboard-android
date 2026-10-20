@@ -1,5 +1,7 @@
 package com.unifiedserver.dashboard.ui.screens
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -10,6 +12,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -26,17 +29,18 @@ import com.unifiedserver.dashboard.ui.utils.settingsTextFieldColors
 fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Local editable state
-    var serverUrl by remember(uiState.serverUrl) { mutableStateOf(uiState.serverUrl) }
+    var serverUrl by rememberSaveable(uiState.serverUrl) { mutableStateOf(uiState.serverUrl) }
     var tmdbApiKey by remember(uiState.tmdbApiKey) { mutableStateOf(uiState.tmdbApiKey) }
+    var omdbApiKey by remember(uiState.omdbApiKey) { mutableStateOf(uiState.omdbApiKey) }
     var tmdbKeyVisible by remember { mutableStateOf(false) }
-    var autoStopEnabled by remember(uiState.autoStopEnabled) { mutableStateOf(uiState.autoStopEnabled) }
-    var seedingTime by remember(uiState.autoStopDelayMinutes) { mutableStateOf(uiState.autoStopDelayMinutes.toString()) }
-    var ratioLimit by remember(uiState.autoStopRatio) { mutableStateOf("%.2f".format(uiState.autoStopRatio)) }
-    var autoCheckEnabled by remember(uiState.autoCheckEnabled) { mutableStateOf(uiState.autoCheckEnabled) }
+    var autoStopEnabled by rememberSaveable(uiState.autoStopEnabled) { mutableStateOf(uiState.autoStopEnabled) }
+    var seedingTime by rememberSaveable(uiState.autoStopDelayMinutes) { mutableStateOf(uiState.autoStopDelayMinutes.toString()) }
+    var ratioLimit by rememberSaveable(uiState.autoStopRatio) { mutableStateOf("%.2f".format(uiState.autoStopRatio)) }
+    var autoCheckEnabled by rememberSaveable(uiState.autoCheckEnabled) { mutableStateOf(uiState.autoCheckEnabled) }
 
     LaunchedEffect(uiState.snackbarMessage) {
         uiState.snackbarMessage?.let { message ->
@@ -49,6 +53,7 @@ fun SettingsScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Settings", style = MaterialTheme.typography.titleLarge) },
+                navigationIcon = { com.unifiedserver.dashboard.ui.navigation.BackAction() },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Surface,
                     titleContentColor = OnSurface
@@ -62,9 +67,14 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 32.dp)
         ) {
+            if (uiState.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+            uiState.configurationError?.let {
+                Text(it, color = StatusYellow, modifier = Modifier.padding(16.dp))
+            }
             // Server URL
             SectionHeader("Server")
             Card(
@@ -89,9 +99,10 @@ fun SettingsScreen(
                     Button(
                         onClick = { viewModel.updateServerUrl(serverUrl.trim()) },
                         colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !uiState.isSaving && serverUrl.isNotBlank()
                     ) {
-                        Text("Save Server URL")
+                        Text(if (uiState.savingSection == "server") "Testing connection…" else "Test and save server")
                     }
                 }
             }
@@ -109,7 +120,7 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Required for TV show tracking and metadata. Get your key at themoviedb.org.",
+                        text = "Used for Movies, TV discovery, and tracked shows. Saved to both this device and your server.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -172,7 +183,7 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Enable Auto-Stop",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -186,6 +197,7 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = autoStopEnabled,
+                            enabled = !uiState.isLoading && !uiState.isSaving && uiState.configurationError == null,
                             onCheckedChange = { autoStopEnabled = it },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Primary,
@@ -225,15 +237,15 @@ fun SettingsScreen(
                         onClick = {
                             viewModel.saveAutoStopConfig(
                                 enabled = autoStopEnabled,
-                                delayMinutes = seedingTime.toIntOrNull() ?: 0,
-                                ratio = ratioLimit.toFloatOrNull() ?: 0f
+                                delayText = seedingTime,
+                                ratioText = ratioLimit
                             )
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Primary),
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isSaving
+                        enabled = !uiState.isLoading && !uiState.isSaving && uiState.configurationError == null
                     ) {
-                        Text("Save Auto-Stop Config")
+                        Text(if (uiState.savingSection == "autoStop") "Saving…" else "Save Auto-Stop Config")
                     }
                 }
             }
@@ -269,6 +281,7 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = autoCheckEnabled,
+                            enabled = !uiState.isLoading && !uiState.isSaving && uiState.configurationError == null,
                             onCheckedChange = { autoCheckEnabled = it },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Primary,
@@ -281,9 +294,9 @@ fun SettingsScreen(
                         onClick = { viewModel.saveAutoCheckEnabled(autoCheckEnabled) },
                         colors = ButtonDefaults.buttonColors(containerColor = Primary),
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isSaving
+                        enabled = !uiState.isLoading && !uiState.isSaving && uiState.configurationError == null
                     ) {
-                        Text("Save Auto-Check")
+                        Text(if (uiState.savingSection == "autoCheck") "Saving…" else "Save Auto-Check")
                     }
                 }
             }
@@ -291,6 +304,16 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             // About
+            SectionHeader("Optional IMDb ratings")
+            Column(Modifier.padding(horizontal = 16.dp)) {
+                OutlinedTextField(value = omdbApiKey, onValueChange = { omdbApiKey = it },
+                    label = { Text("OMDb API key (optional)") }, singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(), colors = settingsTextFieldColors())
+                Button(onClick = { viewModel.saveOmdbApiKey(omdbApiKey) }, enabled = !uiState.isSaving) {
+                    Text("Save optional key")
+                }
+            }
             SectionHeader("About")
             Card(
                 modifier = Modifier
@@ -300,9 +323,9 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    SettingsInfoRow(label = "App Version", value = "1.0.0")
+                    SettingsInfoRow(label = "App Version", value = com.unifiedserver.dashboard.BuildConfig.VERSION_NAME)
                     Spacer(modifier = Modifier.height(8.dp))
-                    SettingsInfoRow(label = "API Version", value = "1.0")
+                    SettingsInfoRow(label = "Connection", value = "Configured server")
                     Spacer(modifier = Modifier.height(8.dp))
                     SettingsInfoRow(
                         label = "Connected To",

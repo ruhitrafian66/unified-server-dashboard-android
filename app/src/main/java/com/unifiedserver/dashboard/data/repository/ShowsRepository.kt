@@ -5,12 +5,11 @@ import com.unifiedserver.dashboard.data.PreferencesManager
 import com.unifiedserver.dashboard.data.models.*
 import javax.inject.Inject
 
-class ShowsRepository @Inject constructor(
-    private val apiService: ApiService,
+open class ShowsRepository @Inject constructor(
     private val preferencesManager: PreferencesManager
 ) {
 
-    suspend fun getShows(): Result<List<Show>> = runCatching {
+    suspend fun getShows(): Result<List<Show>> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getShows()
         if (response.isSuccessful) {
@@ -20,43 +19,43 @@ class ShowsRepository @Inject constructor(
         }
     }
 
-    suspend fun addShow(request: AddShowRequest): Result<AddShowResponse> = runCatching {
+    suspend fun addShow(request: AddShowRequest): Result<AddShowResponse> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.addShow(request)
         if (response.isSuccessful) {
-            response.body() ?: throw Exception("No response body")
+            (response.body() ?: throw Exception("No response body")).also {
+                check(it.success) { it.message ?: "Server rejected adding the show." }
+            }
         } else {
             throw Exception("HTTP ${response.code()}: ${response.message()}")
         }
     }
 
-    suspend fun updateShow(id: String, request: UpdateShowRequest): Result<Unit> = runCatching {
+    suspend fun updateShow(id: String, request: UpdateShowRequest): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.updateShow(id, request)
-        if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+        response.requireSuccess()
     }
 
-    suspend fun deleteShow(id: String): Result<Unit> = runCatching {
+    suspend fun deleteShow(id: String): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.deleteShow(id)
-        if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+        response.requireSuccess()
     }
 
-    suspend fun checkEpisodes(): Result<CheckEpisodesResponse> = runCatching {
+    suspend fun checkEpisodes(): Result<CheckEpisodesResponse> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.checkEpisodes()
         if (response.isSuccessful) {
-            response.body() ?: CheckEpisodesResponse()
+            (response.body() ?: throw Exception("Empty episode-check response")).also {
+                check(it.success) { it.message.ifBlank { "Server rejected the episode check." } }
+            }
         } else {
             throw Exception("HTTP ${response.code()}: ${response.message()}")
         }
     }
 
-    suspend fun getAutoCheckConfig(): Result<AutoCheckConfig> = runCatching {
+    open suspend fun getAutoCheckConfig(): Result<AutoCheckConfig> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getAutoCheckConfig()
         if (response.isSuccessful) {
@@ -66,15 +65,13 @@ class ShowsRepository @Inject constructor(
         }
     }
 
-    suspend fun setAutoCheckEnabled(enabled: Boolean): Result<Unit> = runCatching {
+    suspend fun setAutoCheckEnabled(enabled: Boolean): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.setAutoCheckConfig(AutoCheckUpdateRequest(enabled))
-        if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+        response.requireSuccess()
     }
 
-    suspend fun getQueueStatus(): Result<QueueStatusResponse> = runCatching {
+    suspend fun getQueueStatus(): Result<QueueStatusResponse> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getQueueStatus()
         if (response.isSuccessful) {
@@ -84,17 +81,19 @@ class ShowsRepository @Inject constructor(
         }
     }
 
-    suspend fun clearQueue(): Result<ClearQueueResponse> = runCatching {
+    suspend fun clearQueue(): Result<ClearQueueResponse> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.clearQueue()
         if (response.isSuccessful) {
-            response.body() ?: ClearQueueResponse()
+            (response.body() ?: throw Exception("Empty queue response")).also {
+                check(it.success) { it.message ?: "Server rejected clearing the queue." }
+            }
         } else {
             throw Exception("HTTP ${response.code()}: ${response.message()}")
         }
     }
 
-    suspend fun searchShows(query: String): Result<List<TmdbSearchResult>> = runCatching {
+    suspend fun searchShows(query: String): Result<List<TmdbSearchResult>> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.searchShows(query)
         if (response.isSuccessful) {
@@ -104,7 +103,7 @@ class ShowsRepository @Inject constructor(
         }
     }
 
-    suspend fun getTmdbConfig(): Result<TmdbConfig> = runCatching {
+    suspend fun getTmdbConfig(): Result<TmdbConfig> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getTmdbConfig()
         if (response.isSuccessful) {
@@ -114,25 +113,25 @@ class ShowsRepository @Inject constructor(
         }
     }
 
-    suspend fun setTmdbApiKey(apiKey: String): Result<Unit> = runCatching {
+    suspend fun setTmdbApiKey(apiKey: String): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.setTmdbApiKey(TmdbApiKeyRequest(apiKey))
-        if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+        response.requireSuccess()
     }
 
-    suspend fun downloadSeason(tmdbId: Int?, season: Int, showName: String): Result<DownloadSeasonResponse> = runCatching {
+    suspend fun downloadSeason(tmdbId: Int?, season: Int, showName: String): Result<DownloadSeasonResponse> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.downloadSeason(DownloadSeasonRequest(tmdbId, showName, season))
         if (response.isSuccessful) {
-            response.body() ?: DownloadSeasonResponse()
+            (response.body() ?: throw Exception("Empty season-download response")).also {
+                check(it.success) { it.message ?: "Server rejected the season download." }
+            }
         } else {
             throw Exception("HTTP ${response.code()}: ${response.message()}")
         }
     }
 
-    suspend fun getDownloadProgress(sessionId: String): Result<DownloadProgressResponse> = runCatching {
+    suspend fun getDownloadProgress(sessionId: String): Result<DownloadProgressResponse> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getDownloadProgress(sessionId)
         if (response.isSuccessful) {

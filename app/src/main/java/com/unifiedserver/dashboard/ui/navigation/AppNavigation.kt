@@ -1,138 +1,114 @@
 package com.unifiedserver.dashboard.ui.navigation
 
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Tv
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
-import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
-import com.unifiedserver.dashboard.ui.screens.DashboardScreen
-import com.unifiedserver.dashboard.ui.screens.MoviesScreen
-import com.unifiedserver.dashboard.ui.screens.SettingsScreen
-import com.unifiedserver.dashboard.ui.screens.SetupScreen
-import com.unifiedserver.dashboard.ui.screens.ShowsScreen
-import com.unifiedserver.dashboard.ui.screens.SystemScreen
-import com.unifiedserver.dashboard.ui.screens.TorrentsScreen
-import com.unifiedserver.dashboard.ui.screens.TvScreen
+import androidx.navigation.compose.*
+import com.unifiedserver.dashboard.data.PreferencesManager
+import com.unifiedserver.dashboard.data.repository.DownloadHandoff
+import com.unifiedserver.dashboard.ui.screens.*
 import com.unifiedserver.dashboard.ui.theme.Background
-import com.unifiedserver.dashboard.ui.theme.Primary
-import com.unifiedserver.dashboard.ui.theme.StatusGray
 import com.unifiedserver.dashboard.ui.theme.Surface
 
-sealed class Screen(val route: String, val title: String, val icon: ImageVector? = null) {
-    object Setup    : Screen("setup",    "Setup")
-    object Dashboard: Screen("dashboard","Dashboard", Icons.Filled.Dashboard)
-    object Torrents : Screen("torrents", "Torrents",  Icons.Filled.Download)
-    object Tv       : Screen("tv",       "TV",        Icons.Filled.Tv)
-    object Movies   : Screen("movies",   "Movies",    Icons.Filled.Movie)
-    object System   : Screen("system",   "System",    Icons.Filled.Memory)
-    object Settings : Screen("settings", "Settings",  Icons.Filled.Settings)
-    // Shows is now accessible from within TV / Settings only, removed from bottom nav
-    object Shows    : Screen("shows",    "Shows")
-}
-
-val bottomNavItems = listOf(
-    Screen.Dashboard,
-    Screen.Torrents,
-    Screen.Tv,
-    Screen.Movies,
-    Screen.System,
-    Screen.Settings,
+private data class Destination(val route: String, val title: String, val icon: ImageVector)
+private val destinations = listOf(
+    Destination("dashboard", "Home", Icons.Default.Dashboard),
+    Destination("tv", "Media", Icons.Default.Movie),
+    Destination("torrents", "Downloads", Icons.Default.Download),
+    Destination("system", "Server", Icons.Default.Memory)
 )
+private val mediaRoutes = listOf("movies", "tv", "shows")
+val LocalOpenSettings = staticCompositionLocalOf<() -> Unit> { {} }
+val LocalOpenDownloads = staticCompositionLocalOf<() -> Unit> { {} }
+val LocalNavigateBack = staticCompositionLocalOf<() -> Unit> { {} }
 
 @Composable
-fun AppNavigation(isSetupComplete: Boolean) {
-    val navController = rememberNavController()
+fun SettingsAction() {
+    val open = LocalOpenSettings.current
+    IconButton(onClick = open) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
+}
 
-    Scaffold(
-        containerColor = Background,
-        bottomBar = {
-            if (isSetupComplete) {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentDestination = navBackStackEntry?.destination
+@Composable
+fun BackAction() {
+    val back = LocalNavigateBack.current
+    IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+}
 
-                NavigationBar(
-                    containerColor = Surface,
-                    tonalElevation = 0.dp
-                ) {
-                    bottomNavItems.forEach { screen ->
-                        val selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true
-                        NavigationBarItem(
-                            icon = {
-                                Icon(
-                                    imageVector = screen.icon!!,
-                                    contentDescription = screen.title
-                                )
-                            },
-                            label = {
-                                Text(
-                                    screen.title,
-                                    style = androidx.compose.material3.MaterialTheme.typography.labelSmall
-                                )
-                            },
-                            selected = selected,
-                            onClick = {
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Primary,
-                                selectedTextColor = Primary,
-                                unselectedIconColor = StatusGray,
-                                unselectedTextColor = StatusGray,
-                                indicatorColor = Surface
+@Composable
+fun AppNavigation(isSetupComplete: Boolean, preferences: PreferencesManager, handoff: DownloadHandoff) {
+    val url by preferences.serverUrl.collectAsStateWithLifecycle<String?>(initialValue = null)
+    if (url == null) {
+        com.unifiedserver.dashboard.ui.components.LoadingScreen()
+        return
+    }
+    // A confirmed server switch must not leave cached data or jobs from the old server visible.
+    key(url) {
+        val navController = rememberNavController()
+        val entry by navController.currentBackStackEntryAsState()
+        val route = entry?.destination?.route
+        val pendingQuery by handoff.pendingQuery.collectAsStateWithLifecycle()
+        fun navigateTop(destination: String) {
+            navController.navigate(destination) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+        LaunchedEffect(pendingQuery, isSetupComplete) {
+            if (isSetupComplete && pendingQuery != null) navigateTop("torrents")
+        }
+        CompositionLocalProvider(
+            LocalOpenSettings provides { navController.navigate("settings") { launchSingleTop = true } },
+            LocalOpenDownloads provides { navigateTop("torrents") },
+            LocalNavigateBack provides { navController.popBackStack() }
+        ) {
+            Scaffold(
+                containerColor = Background,
+                bottomBar = {
+                    if (isSetupComplete) NavigationBar(containerColor = Surface) {
+                        destinations.forEach { item ->
+                            NavigationBarItem(
+                                selected = route == item.route || (item.route == "tv" && route in mediaRoutes),
+                                onClick = { navigateTop(item.route) },
+                                icon = { Icon(item.icon, contentDescription = null) },
+                                label = { Text(item.title) }
                             )
-                        )
+                        }
+                    }
+                }
+            ) { padding ->
+                Column(Modifier.padding(padding).consumeWindowInsets(padding)) {
+                    if (route in mediaRoutes) {
+                        TabRow(selectedTabIndex = mediaRoutes.indexOf(route), containerColor = Surface) {
+                            listOf("Movies", "TV", "Tracked").forEachIndexed { index, label ->
+                                Tab(selected = route == mediaRoutes[index], text = { Text(label) },
+                                    onClick = { navigateTop(mediaRoutes[index]) })
+                            }
+                        }
+                    }
+                    NavHost(navController, if (isSetupComplete) "dashboard" else "setup", Modifier.weight(1f)) {
+                        composable("setup") {
+                            SetupScreen(onConfigured = {
+                                navController.navigate("dashboard") { popUpTo("setup") { inclusive = true } }
+                            })
+                        }
+                        composable("dashboard") { DashboardScreen() }
+                        composable("torrents") { TorrentsScreen(handoff = handoff) }
+                        composable("tv") { TvScreen() }
+                        composable("movies") { MoviesScreen() }
+                        composable("system") { SystemScreen() }
+                        composable("settings") { SettingsScreen() }
+                        composable("shows") { ShowsScreen() }
                     }
                 }
             }
-        }
-    ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = if (isSetupComplete) Screen.Dashboard.route else Screen.Setup.route,
-            modifier = Modifier.padding(innerPadding)
-        ) {
-            composable(Screen.Setup.route) {
-                SetupScreen(
-                    onConfigured = {
-                        navController.navigate(Screen.Dashboard.route) {
-                            popUpTo(Screen.Setup.route) { inclusive = true }
-                        }
-                    }
-                )
-            }
-            composable(Screen.Dashboard.route) { DashboardScreen() }
-            composable(Screen.Torrents.route)  { TorrentsScreen() }
-            composable(Screen.Tv.route)        { TvScreen() }
-            composable(Screen.Movies.route)    { MoviesScreen() }
-            composable(Screen.System.route)    { SystemScreen() }
-            composable(Screen.Settings.route)  { SettingsScreen() }
-            composable(Screen.Shows.route)     { ShowsScreen() }
         }
     }
 }

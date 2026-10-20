@@ -1,5 +1,7 @@
 package com.unifiedserver.dashboard.ui.screens
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,7 +27,8 @@ import com.unifiedserver.dashboard.ui.theme.*
 fun SystemScreen(
     viewModel: SystemViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    RefreshWhileVisible(15_000) { viewModel.loadAll(silent = uiState.systemInfo != null) }
     val snackbarHostState = remember { SnackbarHostState() }
     var showPowerDialog by remember { mutableStateOf<String?>(null) }
 
@@ -39,7 +42,8 @@ fun SystemScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("System", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Server", style = MaterialTheme.typography.titleLarge) },
+                actions = { com.unifiedserver.dashboard.ui.navigation.SettingsAction() },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Surface,
                     titleContentColor = OnSurface
@@ -56,7 +60,9 @@ fun SystemScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            if (uiState.error != null && uiState.systemInfo == null) {
+            if (uiState.systemInfo == null && uiState.error == null) {
+                LoadingScreen()
+            } else if (uiState.error != null && uiState.systemInfo == null) {
                 ErrorScreen(
                     message = uiState.error ?: "Could not reach server",
                     onRetry = { viewModel.refresh() }
@@ -66,6 +72,7 @@ fun SystemScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
+                    item { RefreshStatus(uiState.error, uiState.lastUpdated) { viewModel.refresh() } }
                     // CPU Monitoring
                     uiState.cpuMetrics?.let { metrics ->
                         item { SectionHeader("CPU Monitoring") }
@@ -75,7 +82,7 @@ fun SystemScreen(
                                 averageUsage = metrics.averageUsage,
                                 maxUsage = metrics.maxUsage,
                                 minUsage = metrics.minUsage,
-                                dataPoints = metrics.dataPoints.map { it.usage to it.usage },
+                                dataPoints = metrics.dataPoints,
                                 cpuCount = metrics.cpuCount,
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
@@ -100,12 +107,7 @@ fun SystemScreen(
                     if (uiState.disks.isNotEmpty()) {
                         item { SectionHeader("Storage", modifier = Modifier.padding(top = 8.dp)) }
                         // Prioritize SSD: filter for non-root disk first, then fallback to any non-root disk
-                        val disksToShow = uiState.disks.filter { 
-                            !it.device.contains("nvme0n1") && it.mountPoint != "/"
-                        }.ifEmpty {
-                            // Fallback: show disks that look like external storage
-                            uiState.disks.filter { it.device.contains("nvme") || it.device.contains("sda") }
-                        }
+                        val disksToShow = com.unifiedserver.dashboard.ui.utils.orderedDisks(uiState.disks)
                         
                         items(disksToShow) { disk ->
                             DiskItem(disk = disk)

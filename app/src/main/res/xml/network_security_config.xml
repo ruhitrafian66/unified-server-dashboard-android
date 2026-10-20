@@ -9,7 +9,7 @@
         <!-- Backend server IP -->
         <domain includeSubdomains="true">192.168.0.30</domain>
         
-        <!-- Common private IP ranges -->
+        <!-- Explicit legacy hosts only; these are not private-IP ranges. -->
         <domain includeSubdomains="true">192.168.0.1</domain>
         <domain includeSubdomains="true">192.168.1.1</domain>
         <domain includeSubdomains="true">10.0.0.1</domain>
@@ -17,7 +17,5 @@
     </domain-config>
     
     <!-- All other domains require HTTPS (secure by default) -->
-    <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">*</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="false" />
 </network-security-config>

@@ -5,12 +5,11 @@ import com.unifiedserver.dashboard.data.PreferencesManager
 import com.unifiedserver.dashboard.data.models.*
 import javax.inject.Inject
 
-class TorrentRepository @Inject constructor(
-    private val apiService: ApiService,
+open class TorrentRepository @Inject constructor(
     private val preferencesManager: PreferencesManager
 ) {
 
-    suspend fun getTorrents(): Result<List<Torrent>> = runCatching {
+    open suspend fun getTorrents(): Result<List<Torrent>> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getTorrents()
         if (response.isSuccessful) {
@@ -20,47 +19,37 @@ class TorrentRepository @Inject constructor(
         }
     }
 
-    suspend fun addTorrent(urls: String): Result<Unit> = runCatching {
+    suspend fun addTorrent(urls: String): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.addTorrent(AddTorrentRequest(urls))
-        if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+        response.requireSuccess()
     }
 
-    suspend fun addTorrentAdvanced(urls: String, savePath: String, category: String? = null): Result<Unit> = runCatching {
+    suspend fun addTorrentAdvanced(urls: String, savePath: String, category: String? = null): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.addTorrentAdvanced(AddTorrentAdvancedRequest(urls, savePath, category))
-        if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+        response.requireSuccess()
     }
 
-    suspend fun pauseTorrents(hashes: String): Result<Unit> = runCatching {
+    suspend fun pauseTorrents(hashes: String): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.torrentAction("pause", TorrentActionRequest(hashes))
-        if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+        response.requireSuccess()
     }
 
-    suspend fun resumeTorrents(hashes: String): Result<Unit> = runCatching {
+    suspend fun resumeTorrents(hashes: String): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.torrentAction("resume", TorrentActionRequest(hashes))
-        if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+        response.requireSuccess()
     }
 
-    suspend fun deleteTorrents(hashes: String, deleteFiles: Boolean = false): Result<Unit> = runCatching {
+    suspend fun deleteTorrents(hashes: String, deleteFiles: Boolean = false): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.torrentAction("delete", TorrentActionRequest(hashes, deleteFiles))
-        if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+        response.requireSuccess()
     }
 
-    suspend fun startSearch(pattern: String, plugins: String = "enabled", category: String = "all"): Result<Int> = runCatching {
+    open suspend fun startSearch(pattern: String, plugins: String = "enabled", category: String = "all"): Result<Int> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.startSearch(SearchStartRequest(pattern, plugins, category))
         if (response.isSuccessful) {
@@ -70,7 +59,7 @@ class TorrentRepository @Inject constructor(
         }
     }
 
-    suspend fun getSearchStatus(id: Int): Result<SearchStatusItem> = runCatching {
+    suspend fun getSearchStatus(id: Int): Result<SearchStatusItem> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getSearchStatus(id)
         if (response.isSuccessful) {
@@ -85,9 +74,9 @@ class TorrentRepository @Inject constructor(
         }
     }
 
-    suspend fun getSearchResults(id: Int): Result<SearchResultsResponse> = runCatching {
+    open suspend fun getSearchResults(id: Int, offset: Int = 0): Result<SearchResultsResponse> = apiResult {
         val service = buildApiService(preferencesManager)
-        val response = service.getSearchResults(id)
+        val response = service.getSearchResults(id, offset = offset)
         if (response.isSuccessful) {
             val results = response.body()
             when {
@@ -101,15 +90,13 @@ class TorrentRepository @Inject constructor(
         }
     }
 
-    suspend fun stopSearch(id: Int): Result<Unit> = runCatching {
+    open suspend fun stopSearch(id: Int): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.stopSearch(SearchStopRequest(id))
-        if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+        response.requireSuccess()
     }
 
-    suspend fun getAutoStopConfig(): Result<AutoStopConfig> = runCatching {
+    open suspend fun getAutoStopConfig(): Result<AutoStopConfig> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getAutoStopConfig()
         if (response.isSuccessful) {
@@ -119,11 +106,9 @@ class TorrentRepository @Inject constructor(
         }
     }
 
-    suspend fun setAutoStopConfig(config: AutoStopConfig): Result<Unit> = runCatching {
+    open suspend fun setAutoStopConfig(config: AutoStopConfig): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.setAutoStopConfig(config)
-        if (!response.isSuccessful) {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
-        }
+        response.requireSuccess()
     }
 }
