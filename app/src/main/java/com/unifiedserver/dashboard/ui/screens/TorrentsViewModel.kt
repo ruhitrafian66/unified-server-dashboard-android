@@ -122,6 +122,141 @@ class TorrentsViewModel @Inject constructor(private val repository: TorrentRepos
         }
     }
 
+    /**
+     * Starts a torrent search and automatically picks the best result:
+     * - Must contain "1080p" or higher quality ("2160p", "4k", "uhd") in the filename
+     * - Among qualifying results, picks the one with the most seeders
+     * - Falls back to best available if no 1080p+ results found
+     * - Adds the winner directly to qBittorrent
+     */
+    fun autoPickAndAdd(query: String) {
+        if (query.isBlank()) return
+        cancelSearch()
+        _uiState.value = _uiState.value.copy(
+            searchQuery = query.trim(), isSearching = true,
+            searchResults = emptyList(), searchTotal = 0, searchOffset = 0,
+            searchError = null, searchId = null,
+            searchStatus = "Finding best source…"
+        )
+        searchJob = viewModelScope.launch {
+            val started = repository.startSearch(query.trim())
+            val id = started.getOrNull()
+            if (id == null || id < 0) {
+                _uiState.value = _uiState.value.copy(isSearching = false,
+                    searchError = started.exceptionOrNull()?.message ?: "Search failed to start.")
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(searchId = id)
+
+            // Poll until stopped or stable
+            var lastCount = 0
+            var noChangeStreak = 0
+            repeat(150) { attempt ->
+                val result = repository.getSearchResults(id)
+                if (_uiState.value.searchId != id) return@launch
+                val response = result.getOrNull()
+                if (response == null) {
+                    _uiState.value = _uiState.value.copy(isSearching = false,
+                        searchError = result.exceptionOrNull()?.message ?: "Search failed.")
+                    repository.stopSearch(id)
+                    return@launch
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    searchResults = response.results,
+                    searchTotal = response.total,
+                    searchOffset = response.results.size,
+                    searchStatus = "Scanning sources… (${response.results.size} found)"
+                )
+
+                val done = response.status.equals("Stopped", true) ||
+                           response.status.equals("Complete", true)
+
+                // Also stop if results have stabilised for 3 consecutive polls
+                if (response.results.size == lastCount && response.results.isNotEmpty()) {
+                    noChangeStreak++
+                } else {
+                    noChangeStreak = 0
+                }
+                lastCount = response.results.size
+
+                if (done || noChangeStreak >= 3) {
+                    repository.stopSearch(id)
+                    pickAndAdd(response.results, query)
+                    return@launch
+                }
+                delay(2_000)
+            }
+
+            // Timeout — pick from whatever we have
+            repository.stopSearch(id)
+            pickAndAdd(_uiState.value.searchResults, query)
+        }
+    }
+
+    private suspend fun pickAndAdd(results: List<SearchResult>, query: String) {
+        if (results.isEmpty()) {
+            _uiState.value = _uiState.value.copy(
+                isSearching = false,
+                snackbarMessage = "No sources found for \"$query\""
+            )
+            return
+        }
+
+        // Quality keywords ranked highest to lowest
+        val qualityTiers = listOf(
+            listOf("2160p", "4k", "uhd"),   // tier 0 — 4K
+            listOf("1080p"),                 // tier 1 — 1080p
+            listOf("720p")                   // tier 2 — fallback if nothing higher
+        )
+
+        // Try each quality tier in order, pick most-seeded within tier
+        val picked = qualityTiers.firstNotNullOfOrNull { keywords ->
+            results
+                .filter { r -> keywords.any { r.fileName.contains(it, ignoreCase = true) } }
+                .maxByOrNull { it.nbSeeders }
+        }
+        // Last-resort: just take the most-seeded result regardless of quality
+            ?: results.maxByOrNull { it.nbSeeders }
+
+        if (picked == null || picked.fileUrl.isBlank()) {
+            _uiState.value = _uiState.value.copy(
+                isSearching = false,
+                snackbarMessage = "No downloadable source found for \"$query\""
+            )
+            return
+        }
+
+        // Determine which quality label was matched for the snackbar
+        val qualityLabel = when {
+            picked.fileName.contains("2160p", ignoreCase = true) ||
+            picked.fileName.contains("4k", ignoreCase = true) ||
+            picked.fileName.contains("uhd", ignoreCase = true) -> "4K"
+            picked.fileName.contains("1080p", ignoreCase = true) -> "1080p"
+            picked.fileName.contains("720p", ignoreCase = true) -> "720p"
+            else -> "best available"
+        }
+
+        _uiState.value = _uiState.value.copy(
+            isSearching = false,
+            searchStatus = "Adding $qualityLabel source…"
+        )
+
+        repository.addTorrent(picked.fileUrl)
+            .onSuccess {
+                val name = picked.fileName.take(60).let { if (it.length == 60) "$it…" else it }
+                _uiState.value = _uiState.value.copy(
+                    snackbarMessage = "✓ Added $qualityLabel · ${picked.nbSeeders} seeds\n$name"
+                )
+                loadTorrents(silent = true)
+            }
+            .onFailure { e ->
+                _uiState.value = _uiState.value.copy(
+                    snackbarMessage = "Found source but failed to add: ${e.message}"
+                )
+            }
+    }
+
     private fun cancelSearch() {
         searchJob?.cancel()
         moreJob?.cancel()

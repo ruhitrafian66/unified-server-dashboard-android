@@ -49,9 +49,15 @@ fun TorrentsScreen(
     var showDeleteDialog by rememberSaveable { mutableStateOf<String?>(null) }
     var showSortMenu by remember { mutableStateOf(false) }
     LaunchedEffect(incoming) {
-        incoming?.let {
-            showSearchSheet = true
-            viewModel.startSearch(it)
+        incoming?.let { req ->
+            if (req.autoPick) {
+                // Auto-pick mode: run silently in background, show snackbar with result
+                viewModel.autoPickAndAdd(req.query)
+            } else {
+                // Manual mode: open search sheet so user picks manually
+                showSearchSheet = true
+                viewModel.startSearch(req.query)
+            }
             handoff.consume()
         }
     }

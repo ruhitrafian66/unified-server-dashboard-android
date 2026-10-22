@@ -33,6 +33,7 @@ data class MediaUiState(
     val isLoadingDetail: Boolean = false,
     val detailError: String? = null,
     val isDownloading: Boolean = false,
+    val showSeasonPicker: Boolean = false,   // TV-only: show season selector before download
     val snackbarMessage: String? = null
 )
 
@@ -138,10 +139,35 @@ class MediaViewModel @Inject constructor(
     fun downloadFromDetail() {
         val state = _uiState.value
         val item = state.selectedItem ?: return
-        val title = state.movieDetail?.title ?: state.tvDetail?.name ?: item.displayTitle
-        val year = state.movieDetail?.year ?: state.tvDetail?.year ?: item.year
-        handoff.request(listOf(title, year).filter { it.isNotBlank() }.joinToString(" "))
+        val isMovie = (item.mediaType ?: "movie") == "movie"
+
+        if (isMovie) {
+            // Movies: auto-pick best 1080p+ source
+            val title = state.movieDetail?.title ?: item.displayTitle
+            val year = state.movieDetail?.year ?: item.year
+            handoff.request(listOf(title, year).filter { it.isNotBlank() }.joinToString(" "), autoPick = true)
+            closeDetail()
+        } else {
+            // TV shows: show season picker first
+            _uiState.value = _uiState.value.copy(showSeasonPicker = true)
+        }
+    }
+
+    fun downloadWithSeason(season: Int) {
+        val state = _uiState.value
+        val item = state.selectedItem ?: return
+        val title = state.tvDetail?.name ?: item.displayTitle
+        val year = state.tvDetail?.year ?: item.year
+        val seasonStr = "S%02d".format(season)   // e.g. S01, S02
+        // Query: "Breaking Bad S02 2008" or just "Breaking Bad S02"
+        val query = listOf(title, seasonStr, year).filter { it.isNotBlank() }.joinToString(" ")
+        _uiState.value = _uiState.value.copy(showSeasonPicker = false)
+        handoff.request(query, autoPick = true)
         closeDetail()
+    }
+
+    fun dismissSeasonPicker() {
+        _uiState.value = _uiState.value.copy(showSeasonPicker = false)
     }
 
     fun clearSnackbar() { _uiState.value = _uiState.value.copy(snackbarMessage = null) }
