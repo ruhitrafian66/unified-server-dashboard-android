@@ -33,7 +33,6 @@ fun ShowItem(
         confirmValueChange = { value ->
             if (value == SwipeToDismissBoxValue.EndToStart) {
                 onDelete()
-                false
             }
             false
         }
@@ -126,11 +125,11 @@ fun ShowCard(
                 Column(horizontalAlignment = Alignment.End) {
                     IconButton(
                         onClick = onToggleStatus,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             imageVector = if (isActive) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = if (isActive) "Pause tracking" else "Resume tracking",
+                            contentDescription = if (isActive) "Pause tracking ${show.name}" else "Resume tracking ${show.name}",
                             tint = if (isActive) StatusYellow else StatusGreen,
                             modifier = Modifier.size(20.dp)
                         )
@@ -138,11 +137,11 @@ fun ShowCard(
                     Spacer(modifier = Modifier.height(4.dp))
                     IconButton(
                         onClick = onDownloadSeason,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Download,
-                            contentDescription = "Download season",
+                            contentDescription = "Download season ${show.currentSeason} of ${show.name}",
                             tint = Primary,
                             modifier = Modifier.size(20.dp)
                         )

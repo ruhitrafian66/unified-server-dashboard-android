@@ -10,11 +10,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import javax.inject.Inject
 
 data class SystemUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
+    val lastUpdated: Long? = null,
+    val powerPending: Boolean = false,
     val systemInfo: SystemInfo? = null,
     val services: List<ServiceStatus> = emptyList(),
     val disks: List<DiskDevice> = emptyList(),
@@ -31,24 +34,11 @@ class SystemViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(SystemUiState())
     val uiState: StateFlow<SystemUiState> = _uiState.asStateFlow()
 
-    init {
-        loadAll()
-        startAutoRefresh()
-    }
-
-    private fun startAutoRefresh() {
-        viewModelScope.launch {
-            while (true) {
-                kotlinx.coroutines.delay(15_000) // Refresh every 15 seconds
-                if (!_uiState.value.isLoading) {
-                    loadAll(silent = true)
-                }
-            }
-        }
-    }
+    private var refreshJob: Job? = null
 
     fun loadAll(silent: Boolean = false) {
-        viewModelScope.launch {
+        if (refreshJob?.isActive == true) return
+        refreshJob = viewModelScope.launch {
             if (!silent) {
                 _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             }
@@ -67,17 +57,23 @@ class SystemViewModel @Inject constructor(
 
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
-                systemInfo = systemResult.getOrNull(),
-                services = servicesResult.getOrNull() ?: emptyList(),
-                disks = disksResult.getOrNull() ?: emptyList(),
-                dockerContainers = dockerResult.getOrNull() ?: emptyList(),
-                cpuMetrics = cpuResult.getOrNull(),
-                error = systemResult.exceptionOrNull()?.message
+                systemInfo = systemResult.getOrNull() ?: _uiState.value.systemInfo,
+                services = servicesResult.getOrElse { _uiState.value.services },
+                disks = disksResult.getOrElse { _uiState.value.disks },
+                dockerContainers = dockerResult.getOrElse { _uiState.value.dockerContainers },
+                cpuMetrics = cpuResult.getOrNull() ?: _uiState.value.cpuMetrics,
+                lastUpdated = if (listOf(systemResult, servicesResult, disksResult, dockerResult, cpuResult).all { it.isSuccess })
+                    System.currentTimeMillis() else _uiState.value.lastUpdated,
+                error = listOf("Resources" to systemResult, "Services" to servicesResult, "Storage" to disksResult,
+                    "Containers" to dockerResult, "CPU history" to cpuResult).filter { it.second.isFailure }
+                    .joinToString { it.first }.takeIf { it.isNotBlank() }?.let { "$it unavailable. Previous data retained." }
             )
         }
     }
 
     fun reboot() {
+        if (_uiState.value.powerPending) return
+        _uiState.value = _uiState.value.copy(powerPending = true)
         viewModelScope.launch {
             repository.reboot()
                 .onSuccess {
@@ -86,10 +82,13 @@ class SystemViewModel @Inject constructor(
                 .onFailure { e ->
                     _uiState.value = _uiState.value.copy(snackbarMessage = "Error: ${e.message}")
                 }
+            _uiState.value = _uiState.value.copy(powerPending = false)
         }
     }
 
     fun shutdown() {
+        if (_uiState.value.powerPending) return
+        _uiState.value = _uiState.value.copy(powerPending = true)
         viewModelScope.launch {
             repository.shutdown()
                 .onSuccess {
@@ -98,6 +97,7 @@ class SystemViewModel @Inject constructor(
                 .onFailure { e ->
                     _uiState.value = _uiState.value.copy(snackbarMessage = "Error: ${e.message}")
                 }
+            _uiState.value = _uiState.value.copy(powerPending = false)
         }
     }
 

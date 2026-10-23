@@ -1,5 +1,7 @@
 package com.unifiedserver.dashboard.ui.screens
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -24,12 +26,15 @@ import com.unifiedserver.dashboard.ui.theme.*
 fun DashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val openDownloads = com.unifiedserver.dashboard.ui.navigation.LocalOpenDownloads.current
+    RefreshWhileVisible(10_000) { viewModel.loadData(silent = uiState.health != null) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Dashboard", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Home", style = MaterialTheme.typography.titleLarge) },
+                actions = { com.unifiedserver.dashboard.ui.navigation.SettingsAction() },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Surface,
                     titleContentColor = OnSurface
@@ -45,7 +50,9 @@ fun DashboardScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            if (uiState.error != null && uiState.health == null) {
+            if (uiState.health == null && uiState.error == null) {
+                LoadingScreen()
+            } else if (uiState.error != null && uiState.health == null) {
                 ErrorScreen(
                     message = uiState.error ?: "Could not reach server",
                     onRetry = { viewModel.refresh() }
@@ -55,10 +62,11 @@ fun DashboardScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
+                    item { RefreshStatus(uiState.error, uiState.lastUpdated) { viewModel.refresh() } }
                     // Health status banner
                     item {
                         HealthBanner(
-                            isOnline = uiState.health?.status == "ok",
+                            isOnline = if (uiState.error?.contains("Connection") == true) null else uiState.health?.status == "ok",
                             modifier = Modifier.padding(16.dp)
                         )
                     }
@@ -140,8 +148,10 @@ fun DashboardScreen(
                         items(active) { torrent ->
                             TorrentCard(
                                 torrent = torrent,
-                                onPause = {},
-                                onResume = {}
+                                onPause = openDownloads,
+                                onResume = openDownloads,
+                                readOnly = true,
+                                onOpen = openDownloads
                             )
                         }
                     }
@@ -167,13 +177,7 @@ fun SystemInfoCards(info: SystemInfo, disks: List<DiskDevice> = emptyList()) {
         }
         // Disk: prioritize external SSDs/storage over boot drive (mmcblk0)
         if (disks.isNotEmpty()) {
-            val ssdDisk = disks.find { disk ->
-                // Exclude boot drives and root mount points
-                !disk.device.contains("mmcblk0") && disk.mountPoint != "/" && disk.mountPoint != "/boot"
-            } ?: disks.find { disk ->
-                // Fallback: look for common SSD/external storage patterns
-                disk.device.contains("nvme0n1") || disk.device.contains("sda") || disk.device.contains("mmcblk1")
-            }
+            val ssdDisk = com.unifiedserver.dashboard.ui.utils.orderedDisks(disks).firstOrNull()
             
             if (ssdDisk != null) {
                 SystemInfoRow(
@@ -221,12 +225,12 @@ fun SystemInfoRow(label: String, value: String) {
 
 @Composable
 fun HealthBanner(
-    isOnline: Boolean,
+    isOnline: Boolean?,
     modifier: Modifier = Modifier
 ) {
-    val color = if (isOnline) StatusGreen else StatusRed
-    val text = if (isOnline) "Server Online" else "Server Offline"
-    val icon = if (isOnline) Icons.Filled.CheckCircle else Icons.Filled.Error
+    val color = when (isOnline) { true -> StatusGreen; false -> StatusRed; null -> StatusYellow }
+    val text = when (isOnline) { true -> "Server online"; false -> "Server offline"; null -> "Connection unavailable — status may be stale" }
+    val icon = if (isOnline == true) Icons.Filled.CheckCircle else Icons.Filled.Error
 
     Card(
         modifier = modifier.fillMaxWidth(),

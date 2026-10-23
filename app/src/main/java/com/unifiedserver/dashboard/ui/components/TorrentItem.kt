@@ -35,7 +35,6 @@ fun TorrentItem(
         confirmValueChange = { value ->
             if (value == SwipeToDismissBoxValue.EndToStart) {
                 onDelete()
-                false // keep item; let ViewModel handle removal
             }
             false
         }
@@ -76,11 +75,14 @@ fun TorrentItem(
 fun TorrentCard(
     torrent: Torrent,
     onPause: () -> Unit,
-    onResume: () -> Unit
+    onResume: () -> Unit,
+    readOnly: Boolean = false,
+    onOpen: () -> Unit = {}
 ) {
     val stateColor = torrentStateColor(torrent.state)
     val stateLabel = torrentStateLabel(torrent.state)
-    val isPaused = torrent.state.contains("paused", ignoreCase = true)
+    val isPaused = torrent.state.contains("paused", ignoreCase = true) ||
+        torrent.state.startsWith("stopped", ignoreCase = true)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -103,13 +105,15 @@ fun TorrentCard(
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                IconButton(
+                if (readOnly) {
+                    TextButton(onClick = onOpen) { Text("View") }
+                } else IconButton(
                     onClick = if (isPaused) onResume else onPause,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                        contentDescription = if (isPaused) "Resume" else "Pause",
+                        contentDescription = if (isPaused) "Resume ${torrent.name}" else "Pause ${torrent.name}",
                         tint = Primary,
                         modifier = Modifier.size(20.dp)
                     )
@@ -199,10 +203,10 @@ fun TorrentCard(
 fun torrentStateColor(state: String): Color = when (state.lowercase()) {
     "downloading" -> StateDownloading
     "uploading" -> StateUploading
-    "pauseddl", "pausedup" -> StatePaused
+    "pauseddl", "pausedup", "stoppeddl", "stoppedup" -> StatePaused
     "error", "missingfiles" -> StateError
     "queueddl", "queuedup" -> StateQueued
-    "checkingdl", "checkingup", "checkingresumdata" -> StateChecking
+    "checkingdl", "checkingup", "checkingresumedata" -> StateChecking
     "stalleddl" -> StateStalledDL
     "stalledup" -> StateStalledUP
     else -> StatePaused
@@ -211,15 +215,15 @@ fun torrentStateColor(state: String): Color = when (state.lowercase()) {
 fun torrentStateLabel(state: String): String = when (state.lowercase()) {
     "downloading" -> "Downloading"
     "uploading" -> "Seeding"
-    "pauseddl" -> "Paused"
-    "pausedup" -> "Paused (UP)"
+    "pauseddl", "stoppeddl" -> "Paused"
+    "pausedup", "stoppedup" -> "Paused (seeding)"
     "error" -> "Error"
     "missingfiles" -> "Missing Files"
     "queueddl" -> "Queued"
     "queuedup" -> "Queued (UP)"
     "checkingdl" -> "Checking"
     "checkingup" -> "Checking (UP)"
-    "checkingresumdata" -> "Checking Resume"
+    "checkingresumedata" -> "Checking Resume"
     "stalleddl" -> "Stalled"
     "stalledup" -> "Stalled (UP)"
     else -> state

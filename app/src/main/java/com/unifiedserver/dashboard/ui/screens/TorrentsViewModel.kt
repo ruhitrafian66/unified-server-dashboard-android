@@ -6,327 +6,339 @@ import com.unifiedserver.dashboard.data.models.SearchResult
 import com.unifiedserver.dashboard.data.models.Torrent
 import com.unifiedserver.dashboard.data.repository.TorrentRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class TorrentSortOption {
-    NAME, SIZE, SEEDS, DATE_ADDED, PROGRESS, RATIO, SPEED_DOWN, SPEED_UP
-}
-
-enum class SortOrder {
-    ASCENDING, DESCENDING
-}
+enum class TorrentSortOption { NAME, SIZE, SEEDS, DATE_ADDED, PROGRESS, RATIO, SPEED_DOWN, SPEED_UP }
+enum class SortOrder { ASCENDING, DESCENDING }
 
 data class TorrentsUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
+    val lastUpdated: Long? = null,
     val torrents: List<Torrent> = emptyList(),
     val snackbarMessage: String? = null,
-    // Sorting
+    val isMutating: Boolean = false,
     val torrentSortOption: TorrentSortOption = TorrentSortOption.DATE_ADDED,
     val torrentSortOrder: SortOrder = SortOrder.DESCENDING,
-    // Search
     val isSearching: Boolean = false,
     val searchQuery: String = "",
     val searchId: Int? = null,
     val searchStatus: String = "",
     val searchResults: List<SearchResult> = emptyList(),
+    val searchTotal: Int = 0,
+    val searchOffset: Int = 0,
+    val isLoadingMore: Boolean = false,
     val searchError: String? = null,
     val searchResultsSortOption: TorrentSortOption = TorrentSortOption.SEEDS,
     val searchResultsSortOrder: SortOrder = SortOrder.DESCENDING
 )
 
 @HiltViewModel
-class TorrentsViewModel @Inject constructor(
-    private val repository: TorrentRepository
-) : ViewModel() {
-
+class TorrentsViewModel @Inject constructor(private val repository: TorrentRepository) : ViewModel() {
     private val _uiState = MutableStateFlow(TorrentsUiState())
-    val uiState: StateFlow<TorrentsUiState> = _uiState.asStateFlow()
+    val uiState = _uiState.asStateFlow()
+    private var searchJob: Job? = null
+    private var moreJob: Job? = null
+    private var refreshJob: Job? = null
 
-    init {
-        loadTorrents()
-    }
-
-    fun loadTorrents() {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            repository.getTorrents()
-                .onSuccess { torrents ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        torrents = torrents
-                    )
-                }
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = e.message ?: "Failed to load torrents"
-                    )
-                }
+    fun loadTorrents(silent: Boolean = false) {
+        if (refreshJob?.isActive == true) return
+        refreshJob = viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = !silent)
+            repository.getTorrents().onSuccess {
+                _uiState.value = _uiState.value.copy(isLoading = false, torrents = it,
+                    error = null, lastUpdated = System.currentTimeMillis())
+            }.onFailure {
+                _uiState.value = _uiState.value.copy(isLoading = false, error = it.message ?: "Could not refresh downloads.")
+            }
         }
     }
 
-    fun addTorrent(url: String) {
-        viewModelScope.launch {
-            repository.addTorrent(url)
-                .onSuccess {
-                    _uiState.value = _uiState.value.copy(snackbarMessage = "Torrent added")
-                    loadTorrents()
-                }
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        snackbarMessage = "Error: ${e.message}"
-                    )
-                }
-        }
+    fun addTorrent(url: String, onAdded: () -> Unit = {}) = mutate("Download added", onAdded) {
+        repository.addTorrent(url)
+    }
+    fun pauseTorrent(hash: String) = mutate("Download paused") { repository.pauseTorrents(hash) }
+    fun resumeTorrent(hash: String) = mutate("Download resumed") { repository.resumeTorrents(hash) }
+    fun deleteTorrent(hash: String, deleteFiles: Boolean = false) = mutate("Download removed") {
+        repository.deleteTorrents(hash, deleteFiles)
     }
 
-    fun pauseTorrent(hash: String) {
+    private fun mutate(message: String, onSuccess: () -> Unit = {}, block: suspend () -> Result<Unit>) {
+        if (_uiState.value.isMutating) return
+        _uiState.value = _uiState.value.copy(isMutating = true)
         viewModelScope.launch {
-            repository.pauseTorrents(hash)
-                .onSuccess { loadTorrents() }
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        snackbarMessage = "Error: ${e.message}"
-                    )
-                }
-        }
-    }
-
-    fun resumeTorrent(hash: String) {
-        viewModelScope.launch {
-            repository.resumeTorrents(hash)
-                .onSuccess { loadTorrents() }
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        snackbarMessage = "Error: ${e.message}"
-                    )
-                }
-        }
-    }
-
-    fun deleteTorrent(hash: String, deleteFiles: Boolean = false) {
-        viewModelScope.launch {
-            repository.deleteTorrents(hash, deleteFiles)
-                .onSuccess {
-                    _uiState.value = _uiState.value.copy(snackbarMessage = "Torrent deleted")
-                    loadTorrents()
-                }
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        snackbarMessage = "Error: ${e.message}"
-                    )
-                }
+            block().onSuccess {
+                _uiState.value = _uiState.value.copy(snackbarMessage = message)
+                onSuccess()
+                loadTorrents(silent = true)
+            }.onFailure {
+                _uiState.value = _uiState.value.copy(snackbarMessage = it.message ?: "Action failed. Try again.")
+            }
+            _uiState.value = _uiState.value.copy(isMutating = false)
         }
     }
 
     fun startSearch(query: String) {
-        viewModelScope.launch {
-            // Validate search query
-            if (query.isBlank()) {
-                _uiState.value = _uiState.value.copy(
-                    searchError = "Search query cannot be empty"
-                )
+        if (query.isBlank()) return
+        cancelSearch()
+        _uiState.value = _uiState.value.copy(searchQuery = query.trim(), isSearching = true,
+            searchResults = emptyList(), searchTotal = 0, searchOffset = 0, searchError = null, searchId = null,
+            searchStatus = "Starting search…")
+        searchJob = viewModelScope.launch {
+            val started = repository.startSearch(query.trim())
+            val id = started.getOrNull()
+            if (id == null || id < 0) {
+                _uiState.value = _uiState.value.copy(isSearching = false,
+                    searchError = started.exceptionOrNull()?.message ?: "Invalid search response.")
                 return@launch
             }
-
-            _uiState.value = _uiState.value.copy(
-                searchQuery = query,
-                isSearching = true,
-                searchResults = emptyList(),
-                searchError = null,
-                searchStatus = "Initializing..."
-            )
-            repository.startSearch(query)
-                .onSuccess { id ->
-                    // Validate search ID
-                    if (id <= 0) {
-                        _uiState.value = _uiState.value.copy(
-                            isSearching = false,
-                            searchError = "Invalid search ID returned from server"
-                        )
-                        return@onSuccess
-                    }
-                    _uiState.value = _uiState.value.copy(searchId = id)
-                    // Poll for results with progressive fetching
-                    pollForResults(id)
+            _uiState.value = _uiState.value.copy(searchId = id)
+            repeat(150) {
+                val result = repository.getSearchResults(id)
+                if (_uiState.value.searchId != id) return@launch
+                val response = result.getOrNull()
+                if (response == null) {
+                    _uiState.value = _uiState.value.copy(isSearching = false,
+                        searchError = result.exceptionOrNull()?.message ?: "Search failed.")
+                    repository.stopSearch(id)
+                    return@launch
                 }
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        isSearching = false,
-                        searchError = "Failed to start search: ${e.message}"
-                    )
+                _uiState.value = _uiState.value.copy(searchResults = response.results,
+                    searchTotal = response.total, searchOffset = response.results.size, searchStatus = response.status)
+                if (response.status.equals("Stopped", true) || response.status.equals("Complete", true)) {
+                    _uiState.value = _uiState.value.copy(isSearching = false)
+                    return@launch
                 }
+                delay(2_000)
+            }
+            repository.stopSearch(id)
+            _uiState.value = _uiState.value.copy(isSearching = false, searchStatus = "Timed out",
+                searchError = "Search timed out. You can use the results found or search again.")
         }
     }
 
-    private suspend fun pollForResults(id: Int) {
-        val maxAttempts = 150 // 5 minutes with 2-second intervals
-        var attempts = 0
-        var lastResultCount = 0
-        var noChangeCount = 0
-        
-        // Wait 3 seconds for backend to start gathering results
-        kotlinx.coroutines.delay(3000)
-        
-        while (attempts < maxAttempts) {
-            attempts++
-            repository.getSearchStatus(id)
-                .onSuccess { statusItem ->
-                    _uiState.value = _uiState.value.copy(
-                        searchStatus = "${statusItem.status} (${statusItem.total} found)"
-                    )
-                }
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        searchStatus = "Fetching results..."
-                    )
-                }
-            
-            // Fetch results regardless of status
-            repository.getSearchResults(id)
-                .onSuccess { results ->
-                    _uiState.value = _uiState.value.copy(
-                        searchResults = results.results,
-                        searchStatus = "${results.status} (${results.total} found)"
-                    )
-                    
-                    // Check if we've stopped getting new results
-                    if (results.results.size == lastResultCount && results.results.isNotEmpty()) {
-                        noChangeCount++
-                        // If no new results after 3 checks (6 seconds), consider search complete
-                        if (noChangeCount >= 3 || results.status.equals("Stopped", ignoreCase = true)) {
-                            _uiState.value = _uiState.value.copy(isSearching = false)
-                            return@onSuccess
-                        }
-                    } else {
-                        noChangeCount = 0
-                    }
-                    lastResultCount = results.results.size
-                }
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        searchStatus = "Error: ${e.message}"
-                    )
-                }
-            
-            if (attempts < maxAttempts) {
-                kotlinx.coroutines.delay(2000)
+    /**
+     * Starts a torrent search and automatically picks the best result:
+     * - Must contain "1080p" or higher quality ("2160p", "4k", "uhd") in the filename
+     * - Among qualifying results, picks the one with the most seeders
+     * - Falls back to best available if no 1080p+ results found
+     * - Adds the winner directly to qBittorrent
+     */
+    fun autoPickAndAdd(query: String) {
+        if (query.isBlank()) return
+        cancelSearch()
+        _uiState.value = _uiState.value.copy(
+            searchQuery = query.trim(), isSearching = true,
+            searchResults = emptyList(), searchTotal = 0, searchOffset = 0,
+            searchError = null, searchId = null,
+            searchStatus = "Finding best source…"
+        )
+        searchJob = viewModelScope.launch {
+            val started = repository.startSearch(query.trim())
+            val id = started.getOrNull()
+            if (id == null || id < 0) {
+                _uiState.value = _uiState.value.copy(isSearching = false,
+                    searchError = started.exceptionOrNull()?.message ?: "Search failed to start.")
+                return@launch
             }
+            _uiState.value = _uiState.value.copy(searchId = id)
+
+            // Poll until stopped or stable
+            var lastCount = 0
+            var noChangeStreak = 0
+            repeat(150) { attempt ->
+                val result = repository.getSearchResults(id)
+                if (_uiState.value.searchId != id) return@launch
+                val response = result.getOrNull()
+                if (response == null) {
+                    _uiState.value = _uiState.value.copy(isSearching = false,
+                        searchError = result.exceptionOrNull()?.message ?: "Search failed.")
+                    repository.stopSearch(id)
+                    return@launch
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    searchResults = response.results,
+                    searchTotal = response.total,
+                    searchOffset = response.results.size,
+                    searchStatus = "Scanning sources… (${response.results.size} found)"
+                )
+
+                val done = response.status.equals("Stopped", true) ||
+                           response.status.equals("Complete", true)
+
+                // Also stop if results have stabilised for 3 consecutive polls
+                if (response.results.size == lastCount && response.results.isNotEmpty()) {
+                    noChangeStreak++
+                } else {
+                    noChangeStreak = 0
+                }
+                lastCount = response.results.size
+
+                if (done || noChangeStreak >= 3) {
+                    repository.stopSearch(id)
+                    pickAndAdd(response.results, query)
+                    return@launch
+                }
+                delay(2_000)
+            }
+
+            // Timeout — pick from whatever we have
+            repository.stopSearch(id)
+            pickAndAdd(_uiState.value.searchResults, query)
         }
-        
-        // Timeout fallback
+    }
+
+    private suspend fun pickAndAdd(results: List<SearchResult>, query: String) {
+        if (results.isEmpty()) {
+            _uiState.value = _uiState.value.copy(
+                isSearching = false,
+                snackbarMessage = "No sources found for \"$query\""
+            )
+            return
+        }
+
+        // Quality keywords ranked highest to lowest
+        val qualityTiers = listOf(
+            listOf("2160p", "4k", "uhd"),   // tier 0 — 4K
+            listOf("1080p"),                 // tier 1 — 1080p
+            listOf("720p")                   // tier 2 — fallback if nothing higher
+        )
+
+        // Try each quality tier in order, pick most-seeded within tier
+        val picked = qualityTiers.firstNotNullOfOrNull { keywords ->
+            results
+                .filter { r -> keywords.any { r.fileName.contains(it, ignoreCase = true) } }
+                .maxByOrNull { it.nbSeeders }
+        }
+        // Last-resort: just take the most-seeded result regardless of quality
+            ?: results.maxByOrNull { it.nbSeeders }
+
+        if (picked == null || picked.fileUrl.isBlank()) {
+            _uiState.value = _uiState.value.copy(
+                isSearching = false,
+                snackbarMessage = "No downloadable source found for \"$query\""
+            )
+            return
+        }
+
+        // Determine which quality label was matched for the snackbar
+        val qualityLabel = when {
+            picked.fileName.contains("2160p", ignoreCase = true) ||
+            picked.fileName.contains("4k", ignoreCase = true) ||
+            picked.fileName.contains("uhd", ignoreCase = true) -> "4K"
+            picked.fileName.contains("1080p", ignoreCase = true) -> "1080p"
+            picked.fileName.contains("720p", ignoreCase = true) -> "720p"
+            else -> "best available"
+        }
+
         _uiState.value = _uiState.value.copy(
             isSearching = false,
-            searchStatus = "Search completed or timed out"
+            searchStatus = "Adding $qualityLabel source…"
         )
+
+        repository.addTorrent(picked.fileUrl)
+            .onSuccess {
+                val name = picked.fileName.take(60).let { if (it.length == 60) "$it…" else it }
+                _uiState.value = _uiState.value.copy(
+                    snackbarMessage = "✓ Added $qualityLabel · ${picked.nbSeeders} seeds\n$name"
+                )
+                loadTorrents(silent = true)
+            }
+            .onFailure { e ->
+                _uiState.value = _uiState.value.copy(
+                    snackbarMessage = "Found source but failed to add: ${e.message}"
+                )
+            }
     }
 
-    fun refreshSearchResults() {
-        val id = _uiState.value.searchId ?: return
-        viewModelScope.launch {
-            repository.getSearchResults(id)
-                .onSuccess { results ->
-                    _uiState.value = _uiState.value.copy(
-                        searchResults = results.results,
-                        searchStatus = "${results.status} (${results.total} found)"
-                    )
-                }
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        searchError = "Failed to refresh results: ${e.message}"
-                    )
-                }
-        }
+    private fun cancelSearch() {
+        searchJob?.cancel()
+        moreJob?.cancel()
+        _uiState.value.searchId?.let { id -> viewModelScope.launch { repository.stopSearch(id) } }
+        _uiState.value = _uiState.value.copy(isLoadingMore = false)
     }
 
     fun stopSearch() {
-        val id = _uiState.value.searchId ?: return
-        viewModelScope.launch {
-            repository.stopSearch(id)
-            _uiState.value = _uiState.value.copy(isSearching = false)
+        val id = _uiState.value.searchId
+        searchJob?.cancel()
+        moreJob?.cancel()
+        _uiState.value = _uiState.value.copy(isSearching = false, isLoadingMore = false, searchStatus = "Stopped")
+        if (id != null) viewModelScope.launch {
+            repository.stopSearch(id).onFailure {
+                _uiState.value = _uiState.value.copy(searchError = "Local polling stopped; server stop failed. ${it.message}")
+            }
         }
     }
 
     fun clearSearch() {
-        _uiState.value = _uiState.value.copy(
-            searchQuery = "",
-            searchId = null,
-            searchStatus = "",
-            searchResults = emptyList(),
-            searchError = null,
-            isSearching = false
-        )
+        cancelSearch()
+        _uiState.value = _uiState.value.copy(searchQuery = "", searchId = null, searchStatus = "",
+            searchResults = emptyList(), searchTotal = 0, searchOffset = 0, searchError = null, isSearching = false)
     }
 
-    fun clearSnackbar() {
-        _uiState.value = _uiState.value.copy(snackbarMessage = null)
+    fun loadMoreResults() {
+        val state = _uiState.value
+        val id = state.searchId ?: return
+        if (state.isSearching || state.isLoadingMore || state.searchOffset >= state.searchTotal) return
+        _uiState.value = state.copy(isLoadingMore = true, searchError = null)
+        moreJob = viewModelScope.launch {
+            repository.getSearchResults(id, state.searchOffset).onSuccess {
+                if (_uiState.value.searchId == id) _uiState.value = _uiState.value.copy(
+                    searchResults = (_uiState.value.searchResults + it.results).distinctBy { item -> item.fileUrl },
+                    searchTotal = it.total,
+                    searchOffset = if (it.results.isEmpty()) it.total else state.searchOffset + it.results.size,
+                    isLoadingMore = false)
+            }.onFailure {
+                _uiState.value = _uiState.value.copy(isLoadingMore = false, searchError = it.message)
+            }
+        }
     }
 
+    fun refreshSearchResults() = loadMoreResults()
+    fun clearSnackbar() { _uiState.value = _uiState.value.copy(snackbarMessage = null) }
     fun refresh() = loadTorrents()
 
-    // Sorting functions
-    fun setTorrentSort(sortOption: TorrentSortOption) {
-        val newOrder = if (_uiState.value.torrentSortOption == sortOption) {
-            if (_uiState.value.torrentSortOrder == SortOrder.ASCENDING) SortOrder.DESCENDING
-            else SortOrder.ASCENDING
-        } else {
-            SortOrder.DESCENDING
-        }
-        _uiState.value = _uiState.value.copy(
-            torrentSortOption = sortOption,
-            torrentSortOrder = newOrder
-        )
+    fun setTorrentSort(option: TorrentSortOption) {
+        _uiState.value = _uiState.value.copy(torrentSortOption = option,
+            torrentSortOrder = nextOrder(option == _uiState.value.torrentSortOption, _uiState.value.torrentSortOrder))
     }
-
-    fun setSearchResultsSort(sortOption: TorrentSortOption) {
-        val newOrder = if (_uiState.value.searchResultsSortOption == sortOption) {
-            if (_uiState.value.searchResultsSortOrder == SortOrder.ASCENDING) SortOrder.DESCENDING
-            else SortOrder.ASCENDING
-        } else {
-            SortOrder.DESCENDING
-        }
-        _uiState.value = _uiState.value.copy(
-            searchResultsSortOption = sortOption,
-            searchResultsSortOrder = newOrder
-        )
+    fun setSearchResultsSort(option: TorrentSortOption) {
+        _uiState.value = _uiState.value.copy(searchResultsSortOption = option,
+            searchResultsSortOrder = nextOrder(option == _uiState.value.searchResultsSortOption, _uiState.value.searchResultsSortOrder))
     }
+    private fun nextOrder(same: Boolean, old: SortOrder) =
+        if (same && old == SortOrder.DESCENDING) SortOrder.ASCENDING else SortOrder.DESCENDING
 
-    private fun sortTorrents(torrents: List<Torrent>, sortOption: TorrentSortOption, sortOrder: SortOrder): List<Torrent> {
-        val sorted = when (sortOption) {
-            TorrentSortOption.NAME -> torrents.sortedBy { it.name }
-            TorrentSortOption.SIZE -> torrents.sortedBy { it.size }
-            TorrentSortOption.SEEDS -> torrents.sortedBy { it.num_seeds }
-            TorrentSortOption.DATE_ADDED -> torrents.sortedBy { it.seedingTime }
-            TorrentSortOption.PROGRESS -> torrents.sortedBy { it.progress }
-            TorrentSortOption.RATIO -> torrents.sortedBy { it.ratio }
-            TorrentSortOption.SPEED_DOWN -> torrents.sortedBy { it.dlspeed }
-            TorrentSortOption.SPEED_UP -> torrents.sortedBy { it.upspeed }
-        }
-        return if (sortOrder == SortOrder.DESCENDING) sorted.reversed() else sorted
-    }
+    fun getSortedTorrents(): List<Torrent> = sortTorrents(_uiState.value.torrents,
+        _uiState.value.torrentSortOption, _uiState.value.torrentSortOrder)
 
-    private fun sortSearchResults(results: List<SearchResult>, sortOption: TorrentSortOption, sortOrder: SortOrder): List<SearchResult> {
-        val sorted = when (sortOption) {
-            TorrentSortOption.NAME -> results.sortedBy { it.fileName }
-            TorrentSortOption.SIZE -> results.sortedBy { it.fileSize }
-            TorrentSortOption.SEEDS -> results.sortedBy { it.nbSeeders }
-            else -> results // Other sorts don't apply to search results
-        }
-        return if (sortOrder == SortOrder.DESCENDING) sorted.reversed() else sorted
-    }
-
-    // Get sorted torrents based on current sort option
-    fun getSortedTorrents(): List<Torrent> {
-        return sortTorrents(_uiState.value.torrents, _uiState.value.torrentSortOption, _uiState.value.torrentSortOrder)
-    }
-
-    // Get sorted search results based on current sort option
     fun getSortedSearchResults(): List<SearchResult> {
-        return sortSearchResults(_uiState.value.searchResults, _uiState.value.searchResultsSortOption, _uiState.value.searchResultsSortOrder)
+        val state = _uiState.value
+        val sorted = when (state.searchResultsSortOption) {
+            TorrentSortOption.NAME -> state.searchResults.sortedBy { it.fileName.lowercase() }
+            TorrentSortOption.SIZE -> state.searchResults.sortedBy { it.fileSize }
+            else -> state.searchResults.sortedBy { it.nbSeeders }
+        }
+        return if (state.searchResultsSortOrder == SortOrder.DESCENDING) sorted.reversed() else sorted
     }
+}
+
+internal fun sortTorrents(items: List<Torrent>, option: TorrentSortOption, order: SortOrder): List<Torrent> {
+    val sorted = when (option) {
+        TorrentSortOption.NAME -> items.sortedBy { it.name.lowercase() }
+        TorrentSortOption.SIZE -> items.sortedBy { it.size }
+        TorrentSortOption.SEEDS -> items.sortedBy { it.num_seeds }
+        TorrentSortOption.DATE_ADDED -> items.sortedBy { it.addedOn }
+        TorrentSortOption.PROGRESS -> items.sortedBy { it.progress }
+        TorrentSortOption.RATIO -> items.sortedBy { it.ratio }
+        TorrentSortOption.SPEED_DOWN -> items.sortedBy { it.dlspeed }
+        TorrentSortOption.SPEED_UP -> items.sortedBy { it.upspeed }
+    }
+    return if (order == SortOrder.DESCENDING) sorted.reversed() else sorted
 }

@@ -20,6 +20,9 @@ import com.unifiedserver.dashboard.ui.theme.*
 import com.unifiedserver.dashboard.ui.utils.formatBytes
 import com.unifiedserver.dashboard.ui.utils.formatEta
 import com.unifiedserver.dashboard.ui.utils.formatSpeed
+import com.unifiedserver.dashboard.data.models.CpuDataPoint
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 
 @Composable
 fun LoadingScreen() {
@@ -51,7 +54,7 @@ fun ErrorScreen(
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "Connection Error",
+            text = "Unable to load",
             style = MaterialTheme.typography.titleMedium,
             color = OnSurface
         )
@@ -215,40 +218,22 @@ fun LinearProgressCard(
 
 // Deprecated: use formatBytes from FormatUtils instead
 fun formatBytes(bytes: Long): String {
-    if (bytes <= 0) return "0 B"
-    val units = arrayOf("B", "KB", "MB", "GB", "TB")
-    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
-    return "%.1f %s".format(bytes / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups.coerceAtMost(4)])
+    return com.unifiedserver.dashboard.ui.utils.formatBytes(bytes)
 }
 
 // Deprecated: use formatSpeed from FormatUtils instead
 fun formatSpeed(bytesPerSec: Long): String {
-    return "${formatBytes(bytesPerSec)}/s"
+    return com.unifiedserver.dashboard.ui.utils.formatSpeed(bytesPerSec)
 }
 
 // Deprecated: use formatEta from FormatUtils instead
 fun formatEta(seconds: Long): String {
-    if (seconds <= 0 || seconds == Long.MAX_VALUE || seconds > 360000) return "∞"
-    val h = seconds / 3600
-    val m = (seconds % 3600) / 60
-    val s = seconds % 60
-    return when {
-        h > 0 -> "${h}h ${m}m"
-        m > 0 -> "${m}m ${s}s"
-        else -> "${s}s"
-    }
+    return com.unifiedserver.dashboard.ui.utils.formatEta(seconds)
 }
 
 // Deprecated: use formatUptime from FormatUtils instead
 fun formatUptime(seconds: Long): String {
-    val d = seconds / 86400
-    val h = (seconds % 86400) / 3600
-    val m = (seconds % 3600) / 60
-    return when {
-        d > 0 -> "${d}d ${h}h ${m}m"
-        h > 0 -> "${h}h ${m}m"
-        else -> "${m}m"
-    }
+    return com.unifiedserver.dashboard.ui.utils.formatUptime(seconds)
 }
 
 @Composable
@@ -257,7 +242,7 @@ fun CpuGraphCard(
     averageUsage: Float,
     maxUsage: Float,
     minUsage: Float,
-    dataPoints: List<Pair<Float, Float>>,
+    dataPoints: List<CpuDataPoint>,
     cpuCount: Int,
     modifier: Modifier = Modifier
 ) {
@@ -328,7 +313,7 @@ fun CpuGraphCard(
 
             // Mini graph
             if (dataPoints.isNotEmpty()) {
-                CpuMiniGraph(dataPoints = dataPoints, modifier = Modifier.fillMaxWidth().height(80.dp))
+                CpuMiniGraph(dataPoints = dataPoints, modifier = Modifier.fillMaxWidth().height(180.dp))
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
@@ -372,11 +357,15 @@ fun StatBox(
 
 @Composable
 fun CpuMiniGraph(
-    dataPoints: List<Pair<Float, Float>>,
+    dataPoints: List<CpuDataPoint>,
     modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
+            .semantics {
+                contentDescription = if (dataPoints.isEmpty()) "No CPU history available"
+                else "CPU history: ${dataPoints.size} samples, latest ${dataPoints.last().usage.toInt()} percent"
+            }
             .background(SurfaceVariant, RoundedCornerShape(8.dp))
             .padding(12.dp)
     ) {
@@ -395,16 +384,16 @@ fun CpuMiniGraph(
 
 @Composable
 fun CpuLineGraph(
-    dataPoints: List<Pair<Float, Float>>,
+    dataPoints: List<CpuDataPoint>,
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxSize()) {
         androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
             if (dataPoints.isEmpty()) return@Canvas
 
-            val padding = 40.dp.toPx()
+            val padding = 24.dp.toPx()
             val graphWidth = size.width - (padding * 2)
-            val graphHeight = size.height - (padding * 2)
+            val graphHeight = (size.height - (padding * 2)).coerceAtLeast(1f)
 
             val minValue = 0f
             val maxValue = 100f
@@ -452,9 +441,11 @@ fun CpuLineGraph(
 
             // Draw Y-axis labels (0, 25, 50, 75, 100)
             // Plot line
-            val points = dataPoints.mapIndexed { index, (_, value) ->
-                val x = padding + (graphWidth / maxOf(dataPoints.size - 1, 1)) * index
-                val normalizedValue = (value - minValue) / range
+            val firstTime = dataPoints.first().timestamp
+            val duration = (dataPoints.last().timestamp - firstTime).coerceAtLeast(1L)
+            val points = dataPoints.map { sample ->
+                val x = padding + graphWidth * ((sample.timestamp - firstTime).toDouble() / duration).toFloat()
+                val normalizedValue = (sample.usage.coerceIn(0f, 100f) - minValue) / range
                 val y = (size.height - padding) - (normalizedValue * graphHeight)
                 androidx.compose.ui.geometry.Offset(x, y)
             }
@@ -463,8 +454,8 @@ fun CpuLineGraph(
             for (i in 0 until points.size - 1) {
                 drawLine(
                     color = when {
-                        dataPoints[i].second > 80f -> StatusRed
-                        dataPoints[i].second > 60f -> StatusYellow
+                        dataPoints[i].usage > 80f -> StatusRed
+                        dataPoints[i].usage > 60f -> StatusYellow
                         else -> Primary
                     },
                     start = points[i],
@@ -477,8 +468,8 @@ fun CpuLineGraph(
             points.forEachIndexed { index, point ->
                 drawCircle(
                     color = when {
-                        dataPoints[index].second > 80f -> StatusRed
-                        dataPoints[index].second > 60f -> StatusYellow
+                        dataPoints[index].usage > 80f -> StatusRed
+                        dataPoints[index].usage > 60f -> StatusYellow
                         else -> Primary
                     },
                     radius = 3f,
@@ -490,8 +481,8 @@ fun CpuLineGraph(
             if (points.isNotEmpty()) {
                 drawCircle(
                     color = when {
-                        dataPoints.last().second > 80f -> StatusRed
-                        dataPoints.last().second > 60f -> StatusYellow
+                        dataPoints.last().usage > 80f -> StatusRed
+                        dataPoints.last().usage > 60f -> StatusYellow
                         else -> Primary
                     },
                     radius = 5f,
@@ -521,7 +512,10 @@ fun CpuLineGraph(
 
         // X-axis label (time)
         Text(
-            text = "Time →",
+            text = if (dataPoints.isEmpty()) "Time" else {
+                val format = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT)
+                "${format.format(java.util.Date(dataPoints.first().timestamp))} – ${format.format(java.util.Date(dataPoints.last().timestamp))}"
+            },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = MaterialTheme.typography.labelSmall.fontSize * 0.8f,

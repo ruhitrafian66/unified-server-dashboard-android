@@ -1,5 +1,7 @@
 package com.unifiedserver.dashboard.ui.screens
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -7,6 +9,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -16,6 +20,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.unifiedserver.dashboard.data.repository.DownloadHandoff
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -30,15 +36,31 @@ import com.unifiedserver.dashboard.ui.utils.formatSpeed
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TorrentsScreen(
+    handoff: DownloadHandoff,
     viewModel: TorrentsViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val incoming by handoff.pendingQuery.collectAsStateWithLifecycle()
+    RefreshWhileVisible(5_000) { viewModel.loadTorrents(silent = uiState.lastUpdated != null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var showAddDialog by remember { mutableStateOf(false) }
-    var showSearchSheet by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf<String?>(null) }
+    var showAddDialog by rememberSaveable { mutableStateOf(false) }
+    var showSearchSheet by rememberSaveable { mutableStateOf(false) }
+    var showDeleteDialog by rememberSaveable { mutableStateOf<String?>(null) }
     var showSortMenu by remember { mutableStateOf(false) }
+    LaunchedEffect(incoming) {
+        incoming?.let { req ->
+            if (req.autoPick) {
+                // Auto-pick mode: run silently in background, show snackbar with result
+                viewModel.autoPickAndAdd(req.query)
+            } else {
+                // Manual mode: open search sheet so user picks manually
+                showSearchSheet = true
+                viewModel.startSearch(req.query)
+            }
+            handoff.consume()
+        }
+    }
 
     // Show snackbar messages
     LaunchedEffect(uiState.snackbarMessage) {
@@ -51,12 +73,13 @@ fun TorrentsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Torrents", style = MaterialTheme.typography.titleLarge) },
+                title = { Text("Downloads", style = MaterialTheme.typography.titleLarge) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Surface,
                     titleContentColor = OnSurface
                 ),
                 actions = {
+                    com.unifiedserver.dashboard.ui.navigation.SettingsAction()
                     IconButton(onClick = { showSortMenu = true }) {
                         Icon(Icons.Filled.Sort, contentDescription = "Sort", tint = Primary)
                     }
@@ -65,6 +88,10 @@ fun TorrentsScreen(
                         onDismissRequest = { showSortMenu = false },
                         modifier = Modifier.background(Surface)
                     ) {
+                        DropdownMenuItem(text = { Text("Date added") }, onClick = {
+                            viewModel.setTorrentSort(TorrentSortOption.DATE_ADDED)
+                            showSortMenu = false
+                        })
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -243,6 +270,7 @@ fun TorrentsScreen(
                 else -> {
                     val sortedTorrents = viewModel.getSortedTorrents()
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        item { RefreshStatus(uiState.error, uiState.lastUpdated) { viewModel.refresh() } }
                         item {
                             TorrentSummaryRow(
                                 downloadSpeed = uiState.torrents.sumOf { it.dlspeed },
@@ -272,16 +300,15 @@ fun TorrentsScreen(
     if (showAddDialog) {
         AddTorrentDialog(
             onDismiss = { showAddDialog = false },
-            onAdd = { url ->
-                viewModel.addTorrent(url)
-                showAddDialog = false
-            }
+            isPending = uiState.isMutating,
+            onAdd = { url -> viewModel.addTorrent(url) { showAddDialog = false } }
         )
     }
 
     // Delete Confirmation
     showDeleteDialog?.let { hash ->
         DeleteTorrentDialog(
+            name = uiState.torrents.find { it.hash == hash }?.name ?: "selected download",
             onDismiss = { showDeleteDialog = null },
             onDelete = { deleteFiles ->
                 viewModel.deleteTorrent(hash, deleteFiles)
@@ -298,8 +325,7 @@ fun TorrentsScreen(
             onStop = { viewModel.stopSearch() },
             onClear = { viewModel.clearSearch() },
             onAddUrl = { url ->
-                viewModel.addTorrent(url)
-                showSearchSheet = false
+                viewModel.addTorrent(url) { showSearchSheet = false }
             },
             onDismiss = { showSearchSheet = false },
             viewModel = viewModel
@@ -370,9 +396,10 @@ fun EmptyTorrentsView() {
 @Composable
 fun AddTorrentDialog(
     onDismiss: () -> Unit,
+    isPending: Boolean = false,
     onAdd: (String) -> Unit
 ) {
-    var url by remember { mutableStateOf("") }
+    var url by rememberSaveable { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -400,9 +427,9 @@ fun AddTorrentDialog(
         confirmButton = {
             TextButton(
                 onClick = { if (url.isNotBlank()) onAdd(url.trim()) },
-                enabled = url.isNotBlank()
+                enabled = url.isNotBlank() && !isPending
             ) {
-                Text("Add", color = Primary)
+                Text(if (isPending) "Adding…" else "Add download", color = Primary)
             }
         },
         dismissButton = {
@@ -415,6 +442,7 @@ fun AddTorrentDialog(
 
 @Composable
 fun DeleteTorrentDialog(
+    name: String,
     onDismiss: () -> Unit,
     onDelete: (Boolean) -> Unit
 ) {
@@ -427,7 +455,7 @@ fun DeleteTorrentDialog(
         text = {
             Column {
                 Text(
-                    "Are you sure you want to delete this torrent?",
+                    "Remove \"$name\" from Downloads? Files will be kept unless you select the option below.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -472,13 +500,12 @@ fun TorrentSearchSheet(
     onDismiss: () -> Unit,
     viewModel: TorrentsViewModel
 ) {
-    var query by remember { mutableStateOf(uiState.searchQuery) }
+    var query by rememberSaveable(uiState.searchQuery) { mutableStateOf(uiState.searchQuery) }
     var showSortMenu by remember { mutableStateOf(false) }
     val keyboardController = LocalSoftwareKeyboardController.current
 
     ModalBottomSheet(
         onDismissRequest = {
-            onClear()
             onDismiss()
         },
         containerColor = Surface
@@ -486,6 +513,8 @@ fun TorrentSearchSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             Row(
@@ -502,7 +531,7 @@ fun TorrentSearchSheet(
                     modifier = Modifier.weight(1f)
                 )
                 if (uiState.searchResults.isNotEmpty()) {
-                    IconButton(onClick = { showSortMenu = true }, modifier = Modifier.size(32.dp)) {
+                    IconButton(onClick = { showSortMenu = true }, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.Filled.Sort, contentDescription = "Sort results", tint = Primary, modifier = Modifier.size(20.dp))
                     }
                     DropdownMenu(
@@ -571,7 +600,6 @@ fun TorrentSearchSheet(
                     if (query.isNotBlank()) {
                         keyboardController?.hide()
                         onSearch(query)
-                        query = ""
                     }
                 }),
                 trailingIcon = {
@@ -598,7 +626,6 @@ fun TorrentSearchSheet(
                         if (query.isNotBlank()) {
                             keyboardController?.hide()
                             onSearch(query)
-                            query = ""
                         }
                     },
                     enabled = query.isNotBlank() && !uiState.isSearching,
@@ -613,6 +640,7 @@ fun TorrentSearchSheet(
                         Text("Stop", color = StatusRed)
                     }
                 }
+                TextButton(onClick = { query = ""; onClear() }) { Text("Clear") }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -645,7 +673,7 @@ fun TorrentSearchSheet(
 
             if (uiState.searchResults.isNotEmpty()) {
                 Text(
-                    text = "${uiState.searchResults.size} results",
+                    text = "${uiState.searchResults.size} of ${uiState.searchTotal} results",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -658,11 +686,22 @@ fun TorrentSearchSheet(
                     items(sortedResults) { result ->
                         SearchResultItem(
                             result = result,
+                            enabled = !uiState.isMutating,
                             onAdd = { onAddUrl(result.fileUrl) }
                         )
                     }
+                    if (!uiState.isSearching && uiState.searchOffset < uiState.searchTotal) {
+                        item {
+                            TextButton(onClick = { viewModel.loadMoreResults() }, enabled = !uiState.isLoadingMore) {
+                                Text(if (uiState.isLoadingMore) "Loading…" else "Load more results")
+                            }
+                        }
+                    }
                     item { Spacer(modifier = Modifier.height(80.dp)) }
                 }
+            }
+            if (!uiState.isSearching && uiState.searchId != null && uiState.searchResults.isEmpty() && uiState.searchError == null) {
+                Text("No sources found. Try a different title or year.", modifier = Modifier.padding(16.dp))
             }
         }
     }
@@ -671,6 +710,7 @@ fun TorrentSearchSheet(
 @Composable
 fun SearchResultItem(
     result: com.unifiedserver.dashboard.data.models.SearchResult,
+    enabled: Boolean = true,
     onAdd: () -> Unit
 ) {
     Card(
@@ -711,7 +751,7 @@ fun SearchResultItem(
                     )
                 }
             }
-            IconButton(onClick = onAdd) {
+            IconButton(onClick = onAdd, enabled = enabled) {
                 Icon(
                     Icons.Filled.Add,
                     contentDescription = "Add",

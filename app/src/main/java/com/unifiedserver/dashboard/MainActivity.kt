@@ -14,12 +14,16 @@ import com.unifiedserver.dashboard.ui.theme.Background
 import com.unifiedserver.dashboard.ui.theme.UnifiedServerDashboardTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.unifiedserver.dashboard.ui.components.LoadingScreen
+import com.unifiedserver.dashboard.data.repository.DownloadHandoff
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var preferencesManager: PreferencesManager
+    @Inject lateinit var downloadHandoff: DownloadHandoff
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -30,7 +34,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = Background
                 ) {
-                    RootContent(preferencesManager = preferencesManager)
+                    RootContent(preferencesManager, downloadHandoff)
                 }
             }
         }
@@ -38,8 +42,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun RootContent(preferencesManager: PreferencesManager) {
-    val isSetupComplete by preferencesManager.setupComplete.collectAsState(initial = false)
-
-    AppNavigation(isSetupComplete = isSetupComplete)
+private fun RootContent(preferencesManager: PreferencesManager, handoff: DownloadHandoff) {
+    val configured by preferencesManager.setupComplete.collectAsStateWithLifecycle<Boolean?>(initialValue = null)
+    when (configured) {
+        null -> LoadingScreen()
+        else -> AppNavigation(isSetupComplete = configured == true, preferencesManager, handoff)
+    }
 }

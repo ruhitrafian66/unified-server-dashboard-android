@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import javax.inject.Inject
 
 data class ShowsUiState(
@@ -44,19 +45,11 @@ class ShowsViewModel @Inject constructor(
         checkTmdbConfig()
         loadQueueStatus()
         loadAutoCheckConfig()
-        startAutoCheckPolling()
     }
 
-    private fun startAutoCheckPolling() {
-        viewModelScope.launch {
-            while (true) {
-                kotlinx.coroutines.delay(45_000) // Poll every 45 seconds
-                if (_uiState.value.autoCheckEnabled) {
-                    loadQueueStatus()
-                }
-            }
-        }
-    }
+    private var downloadJob: Job? = null
+    private var searchJob: Job? = null
+    private var addingShow = false
 
     fun loadQueueStatus() {
         viewModelScope.launch {
@@ -125,7 +118,9 @@ class ShowsViewModel @Inject constructor(
         }
     }
 
-    fun addShow(name: String, tmdbId: Int? = null, season: Int = 1, episode: Int = 0) {
+    fun addShow(name: String, tmdbId: Int? = null, season: Int = 1, episode: Int = 0, onAdded: () -> Unit = {}) {
+        if (addingShow) return
+        addingShow = true
         viewModelScope.launch {
             repository.addShow(
                 AddShowRequest(
@@ -139,12 +134,14 @@ class ShowsViewModel @Inject constructor(
                     val message = response.message ?: "Show added: $name"
                     _uiState.value = _uiState.value.copy(snackbarMessage = message)
                     loadShows()
+                    onAdded()
                 }
                 .onFailure { e ->
                     _uiState.value = _uiState.value.copy(
                         snackbarMessage = "Error: ${e.message}"
                     )
                 }
+            addingShow = false
         }
     }
 
@@ -250,13 +247,16 @@ class ShowsViewModel @Inject constructor(
     }
 
     private fun pollDownloadProgress(sessionId: String) {
-        viewModelScope.launch {
+        downloadJob?.cancel()
+        downloadJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isDownloadingSeason = true,
                 downloadSessionId = sessionId
             )
             var complete = false
-            while (!complete) {
+            var attempts = 0
+            var failure: String? = null
+            while (!complete && attempts++ < 300) {
                 repository.getDownloadProgress(sessionId)
                     .onSuccess { progress ->
                         _uiState.value = _uiState.value.copy(downloadProgress = progress)
@@ -264,13 +264,15 @@ class ShowsViewModel @Inject constructor(
                             progress.status.equals("complete", ignoreCase = true) ||
                             progress.status.equals("not_found", ignoreCase = true)
                     }
-                    .onFailure { complete = true }
+                    .onFailure { failure = it.message ?: "Connection lost"; complete = true }
                 if (!complete) kotlinx.coroutines.delay(2000)
             }
             val finalProgress = _uiState.value.downloadProgress
             _uiState.value = _uiState.value.copy(
                 isDownloadingSeason = false,
                 snackbarMessage = when {
+                    failure != null -> "Progress unavailable: $failure. Check Downloads before retrying."
+                    !complete -> "Progress check timed out. Check Downloads before retrying."
                     finalProgress?.success == true -> "Season download complete"
                     finalProgress?.error == true -> finalProgress.message ?: "Download failed"
                     else -> finalProgress?.message ?: "Download finished"
@@ -280,6 +282,7 @@ class ShowsViewModel @Inject constructor(
     }
 
     fun clearDownloadProgress() {
+        downloadJob?.cancel()
         _uiState.value = _uiState.value.copy(
             downloadProgress = null,
             downloadSessionId = null,
@@ -288,7 +291,8 @@ class ShowsViewModel @Inject constructor(
     }
 
     fun searchTmdb(query: String) {
-        viewModelScope.launch {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isSearchingTmdb = true,
                 tmdbSearchResults = emptyList(),
@@ -311,8 +315,10 @@ class ShowsViewModel @Inject constructor(
     }
 
     fun clearTmdbSearch() {
+        searchJob?.cancel()
         _uiState.value = _uiState.value.copy(
             tmdbSearchResults = emptyList(),
+            isSearchingTmdb = false,
             tmdbSearchError = null
         )
     }

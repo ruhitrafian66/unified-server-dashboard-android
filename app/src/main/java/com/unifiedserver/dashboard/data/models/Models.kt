@@ -27,7 +27,8 @@ data class Torrent(
     val num_seeds: Int = 0,
     val num_leechs: Int = 0,
     val save_path: String = "",
-    @SerializedName("seeding_time") val seedingTime: Long = 0
+    @SerializedName("seeding_time") val seedingTime: Long = 0,
+    @SerializedName("added_on") val addedOn: Long = 0
 )
 
 data class AddTorrentRequest(val urls: String)

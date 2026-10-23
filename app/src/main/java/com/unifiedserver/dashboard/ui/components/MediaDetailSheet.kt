@@ -10,7 +10,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,11 +35,25 @@ fun MediaDetailSheet(
     imdbRating: ImdbRatingResponse?,
     isLoading: Boolean,
     isDownloading: Boolean,
+    showSeasonPicker: Boolean,
     error: String?,
     onDismiss: () -> Unit,
-    onDownload: () -> Unit
+    onDownload: () -> Unit,
+    onSeasonSelected: (Int) -> Unit,
+    onSeasonPickerDismiss: () -> Unit
 ) {
     val isMovie = (item.mediaType ?: "movie") == "movie"
+    val totalSeasons = tvDetail?.numberOfSeasons?.takeIf { it > 0 } ?: 1
+
+    // Season picker dialog — shown before download for TV shows
+    if (showSeasonPicker) {
+        SeasonPickerDialog(
+            showName = tvDetail?.name ?: item.displayTitle,
+            totalSeasons = totalSeasons,
+            onConfirm = onSeasonSelected,
+            onDismiss = onSeasonPickerDismiss
+        )
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -292,12 +306,11 @@ fun MediaDetailSheet(
                     } else {
                         Icon(Icons.Filled.Download, contentDescription = null, tint = OnPrimary)
                         Spacer(modifier = Modifier.width(8.dp))
-                        val title = (movieDetail?.title ?: tvDetail?.name ?: item.displayTitle).let {
-                            if (it.length > 20) it.take(20) + "…" else it
-                        }
-                        val year = movieDetail?.year ?: tvDetail?.year ?: item.year
-                        val query = if (year.isNotBlank()) "$title $year" else title
-                        Text("Download  \"$query\"", color = OnPrimary, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = if (isMovie) "Find sources" else "Choose season to download",
+                            color = OnPrimary,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
@@ -355,4 +368,109 @@ private fun DetailInfoRow(label: String, value: String) {
             color = OnSurface
         )
     }
+}
+
+@Composable
+fun SeasonPickerDialog(
+    showName: String,
+    totalSeasons: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedSeason by remember { mutableIntStateOf(1) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Surface,
+        title = {
+            Text(
+                text = "Select Season",
+                style = MaterialTheme.typography.titleMedium,
+                color = OnSurface
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = showName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = StatusGray,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                // Season number row with - / + controls
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilledIconButton(
+                        onClick = { if (selectedSeason > 1) selectedSeason-- },
+                        enabled = selectedSeason > 1,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = SurfaceVariant,
+                            contentColor = OnSurface,
+                            disabledContainerColor = SurfaceContainer,
+                            disabledContentColor = StatusGray
+                        ),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Text("−", style = MaterialTheme.typography.titleLarge, color = OnSurface)
+                    }
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    ) {
+                        Text(
+                            text = "Season",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = StatusGray
+                        )
+                        Text(
+                            text = "%02d".format(selectedSeason),
+                            style = MaterialTheme.typography.displaySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Primary
+                        )
+                        Text(
+                            text = "of $totalSeasons",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = StatusGray
+                        )
+                    }
+
+                    FilledIconButton(
+                        onClick = { if (selectedSeason < totalSeasons) selectedSeason++ },
+                        enabled = selectedSeason < totalSeasons,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = SurfaceVariant,
+                            contentColor = OnSurface,
+                            disabledContainerColor = SurfaceContainer,
+                            disabledContentColor = StatusGray
+                        ),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Text("+", style = MaterialTheme.typography.titleLarge, color = OnSurface)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(selectedSeason) },
+                colors = ButtonDefaults.buttonColors(containerColor = Primary),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(Icons.Filled.Download, contentDescription = null, tint = OnPrimary, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Download S%02d".format(selectedSeason), color = OnPrimary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = StatusGray)
+            }
+        }
+    )
 }
