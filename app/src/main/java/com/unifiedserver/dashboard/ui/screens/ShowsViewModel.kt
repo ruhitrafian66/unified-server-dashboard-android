@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unifiedserver.dashboard.data.models.*
 import com.unifiedserver.dashboard.data.repository.ShowsRepository
+import com.unifiedserver.dashboard.data.repository.AutomationSettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +27,8 @@ data class ShowsUiState(
     // Queue
     val queueStatus: QueueStatusResponse? = null,
     val autoCheckEnabled: Boolean = false,
+    val autoCheckReady: Boolean = false,
+    val automationError: String? = null,
     // Season download (past shows)
     val isDownloadingSeason: Boolean = false,
     val downloadProgress: DownloadProgressResponse? = null,
@@ -34,7 +37,8 @@ data class ShowsUiState(
 
 @HiltViewModel
 class ShowsViewModel @Inject constructor(
-    private val repository: ShowsRepository
+    private val repository: ShowsRepository,
+    private val automation: AutomationSettingsRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ShowsUiState())
@@ -44,7 +48,14 @@ class ShowsViewModel @Inject constructor(
         loadShows()
         checkTmdbConfig()
         loadQueueStatus()
-        loadAutoCheckConfig()
+        viewModelScope.launch {
+            automation.state.collect {
+                _uiState.value = _uiState.value.copy(autoCheckEnabled = it.autoCheck ?: false,
+                    autoCheckReady = it.autoCheck != null && it.autoCheckError == null && !it.refreshing,
+                    automationError = it.autoCheckError)
+            }
+        }
+        refreshAutomation()
     }
 
     private var downloadJob: Job? = null
@@ -75,18 +86,11 @@ class ShowsViewModel @Inject constructor(
         }
     }
 
-    private fun loadAutoCheckConfig() {
-        viewModelScope.launch {
-            repository.getAutoCheckConfig()
-                .onSuccess { config ->
-                    _uiState.value = _uiState.value.copy(autoCheckEnabled = config.enabled)
-                }
-        }
-    }
+    fun refreshAutomation() { viewModelScope.launch { automation.refresh() } }
 
     fun setAutoCheckEnabled(enabled: Boolean) {
         viewModelScope.launch {
-            repository.setAutoCheckEnabled(enabled)
+            automation.saveAutoCheck(enabled)
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(
                         autoCheckEnabled = enabled,
@@ -339,5 +343,6 @@ class ShowsViewModel @Inject constructor(
     fun refresh() {
         loadShows()
         loadQueueStatus()
+        refreshAutomation()
     }
 }

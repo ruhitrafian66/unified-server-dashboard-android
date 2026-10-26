@@ -120,7 +120,17 @@ fun MediaBrowseScreen(type: String, viewModel: MediaViewModel) {
         }
     }
     state.selectedItem?.let {
-        MediaDetailSheet(it, state.movieDetail, state.tvDetail, state.imdbRating, state.isLoadingDetail,
-            state.isDownloading, state.detailError, { viewModel.closeDetail() }, { viewModel.downloadFromDetail() })
+        MediaDetailSheet(
+            item = it, movieDetail = state.movieDetail, tvDetail = state.tvDetail, imdbRating = state.imdbRating,
+            isLoading = state.isLoadingDetail, isDownloading = state.isDownloading,
+            showSeasonPicker = state.showSeasonPicker, showAutomaticOptions = state.showAutomaticOptions,
+            downloadSeason = state.downloadSeason, automaticRequested = state.automaticRequested,
+            error = state.detailError, onDismiss = { viewModel.closeDetail() },
+            onDownload = { viewModel.downloadFromDetail() },
+            onSeasonSelected = { season -> viewModel.downloadWithSeason(season) },
+            onSeasonPickerDismiss = { viewModel.dismissSeasonPicker() },
+            onAutoDownload = { viewModel.downloadFromDetail(autoPick = true) },
+            onConfirmAutomatic = { policy -> viewModel.confirmAutomaticDownload(policy) },
+            onDismissAutomatic = { viewModel.dismissAutomaticOptions() })
     }
 }

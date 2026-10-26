@@ -51,8 +51,7 @@ fun TorrentsScreen(
     LaunchedEffect(incoming) {
         incoming?.let { req ->
             if (req.autoPick) {
-                // Auto-pick mode: run silently in background, show snackbar with result
-                viewModel.autoPickAndAdd(req.query)
+                viewModel.autoPickAndAdd(req)
             } else {
                 // Manual mode: open search sheet so user picks manually
                 showSearchSheet = true
@@ -257,6 +256,14 @@ fun TorrentsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            Column(Modifier.fillMaxSize()) {
+                uiState.operation?.let { operation ->
+                    AutomaticOperationCard(operation, onCancel = { viewModel.stopSearch() },
+                        onRetry = { viewModel.retryAutomaticDownload() },
+                        onReview = { showSearchSheet = true }, onDismiss = { viewModel.dismissOperation() },
+                        onRefresh = { viewModel.refresh() })
+                }
+                Box(Modifier.weight(1f)) {
             when {
                 uiState.error != null && uiState.torrents.isEmpty() -> {
                     ErrorScreen(
@@ -291,6 +298,8 @@ fun TorrentsScreen(
                         }
                         item { Spacer(modifier = Modifier.height(80.dp)) }
                     }
+                }
+            }
                 }
             }
         }
@@ -330,6 +339,47 @@ fun TorrentsScreen(
             onDismiss = { showSearchSheet = false },
             viewModel = viewModel
         )
+    }
+}
+
+@Composable
+private fun AutomaticOperationCard(
+    operation: DownloadOperation,
+    onCancel: () -> Unit,
+    onRetry: () -> Unit,
+    onReview: () -> Unit,
+    onDismiss: () -> Unit,
+    onRefresh: () -> Unit
+) {
+    Card(Modifier.fillMaxWidth().padding(12.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Text(operation.request.query, style = MaterialTheme.typography.titleSmall,
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(operation.message, style = MaterialTheme.typography.bodyMedium)
+            operation.source?.let {
+                Text(it.fileName, style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text("${it.nbSeeders} seeders · ${com.unifiedserver.dashboard.ui.utils.formatBytes(it.fileSize)}",
+                    style = MaterialTheme.typography.labelMedium)
+            }
+            if (operation.stage in listOf(DownloadStage.SEARCHING, DownloadStage.SELECTING, DownloadStage.ADDING)) {
+                LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
+            }
+            Row {
+                when (operation.stage) {
+                    DownloadStage.SEARCHING, DownloadStage.SELECTING -> TextButton(onClick = onCancel) { Text("Cancel") }
+                    DownloadStage.FAILED, DownloadStage.CANCELLED -> {
+                        if (operation.canRetry) TextButton(onClick = onRetry) { Text("Retry") }
+                        else TextButton(onClick = onRefresh) { Text("Refresh downloads") }
+                        TextButton(onClick = onReview) { Text("Review sources") }
+                    }
+                    else -> Unit
+                }
+            }
+            if (operation.stage in listOf(DownloadStage.SUCCEEDED, DownloadStage.FAILED, DownloadStage.CANCELLED)) {
+                TextButton(onClick = onDismiss) { Text("Dismiss") }
+            }
+        }
     }
 }
 

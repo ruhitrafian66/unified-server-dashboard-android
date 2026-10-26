@@ -6,7 +6,11 @@ import javax.inject.Singleton
 
 data class DownloadRequest(
     val query: String,
-    val autoPick: Boolean = false   // true = auto-pick best 1080p+ source; false = open search sheet
+    val autoPick: Boolean = false,
+    val title: String? = null,
+    val year: String? = null,
+    val season: Int? = null,
+    val policy: AutoDownloadPolicy = AutoDownloadPolicy()
 )
 
 /** Navigation carries the query; only Downloads owns the actual server search. */
@@ -16,5 +20,6 @@ class DownloadHandoff @Inject constructor() {
     fun request(query: String, autoPick: Boolean = false) {
         pendingQuery.value = DownloadRequest(query, autoPick)
     }
+    fun request(request: DownloadRequest) { pendingQuery.value = request }
     fun consume() { pendingQuery.value = null }
 }

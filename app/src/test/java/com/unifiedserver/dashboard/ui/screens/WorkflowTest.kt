@@ -67,6 +67,8 @@ class WorkflowTest {
             delay(if (id == 1) 1_000 else 10)
             return Result.success(TmdbMovieDetail(id = id, title = "Movie $id"))
         }
+        override suspend fun getTvDetail(id: Int) =
+            Result.success(TmdbTvDetail(id = id, name = "Example Show", numberOfSeasons = 4))
     }
 
     @Test fun newerSearchCancelsOlderRequestAndClearStaysClear() = runTest {
@@ -105,7 +107,8 @@ class WorkflowTest {
         val vm = MediaViewModel(MediaFake(preferences()), handoff)
         vm.openDetail(TmdbMediaItem(id = 3, title = "Title", releaseDate = "2024-01-01"))
         vm.downloadFromDetail()
-        assertEquals("Title 2024", handoff.pendingQuery.value)
+        assertEquals("Title 2024", handoff.pendingQuery.value?.query)
+        assertEquals(false, handoff.pendingQuery.value?.autoPick)
         assertNull(vm.uiState.value.selectedItem)
         handoff.consume()
         assertNull(handoff.pendingQuery.value)
@@ -184,7 +187,8 @@ class WorkflowTest {
         val shows = object : ShowsRepository(prefs) {
             override suspend fun getAutoCheckConfig() = Result.success(AutoCheckConfig(enabled = true))
         }
-        val vm = SettingsViewModel(prefs, torrents, shows, DashboardRepository(prefs))
+        val vm = SettingsViewModel(prefs, torrents, shows, DashboardRepository(prefs),
+            AutomationSettingsRepository(prefs, torrents, shows))
         runCurrent()
         prefs.updateTmdbApiKey("test-only")
         runCurrent()
@@ -215,5 +219,37 @@ class WorkflowTest {
         val root = DiskDevice(device = "mmcblk0", mountPoint = "/")
         val media = DiskDevice(device = "nvme0n1", mountPoint = "/media")
         assertEquals(listOf(media, root), orderedDisks(listOf(root, media)))
+    }
+
+    @Test fun automaticDownloadRequiresSeparateConfirmationAndCarriesRules() = runTest {
+        val handoff = DownloadHandoff()
+        val vm = MediaViewModel(MediaFake(preferences()), handoff)
+        vm.openDetail(TmdbMediaItem(id = 3, title = "Title", releaseDate = "2024-01-01"))
+        vm.downloadFromDetail(autoPick = true)
+        assertNull(handoff.pendingQuery.value)
+        assertTrue(vm.uiState.value.showAutomaticOptions)
+        vm.confirmAutomaticDownload(AutoDownloadPolicy(minimumResolution = 2160, maximumBytes = 1000))
+        assertEquals(true, handoff.pendingQuery.value?.autoPick)
+        assertEquals(2160, handoff.pendingQuery.value?.policy?.minimumResolution)
+        assertEquals(1000L, handoff.pendingQuery.value?.policy?.maximumBytes)
+        assertNull(vm.uiState.value.selectedItem)
+        assertFalse(vm.uiState.value.showAutomaticOptions)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun tvSelectionDoesNotAddTheSeriesPremiereYearAndClosingClearsDialogs() = runTest {
+        val handoff = DownloadHandoff()
+        val vm = MediaViewModel(MediaFake(preferences()), handoff)
+        vm.openDetail(TmdbMediaItem(id = 3, name = "Example Show", mediaType = "tv", firstAirDate = "2020-01-01"))
+        advanceUntilIdle()
+        vm.downloadFromDetail()
+        assertTrue(vm.uiState.value.showSeasonPicker)
+        vm.downloadWithSeason(2)
+        assertEquals("Example Show S02", handoff.pendingQuery.value?.query)
+        assertEquals(false, handoff.pendingQuery.value?.autoPick)
+        assertEquals(2, handoff.pendingQuery.value?.season)
+        assertNull(handoff.pendingQuery.value?.year)
+        assertFalse(vm.uiState.value.showSeasonPicker)
+        vm.viewModelScope.cancel()
     }
 }

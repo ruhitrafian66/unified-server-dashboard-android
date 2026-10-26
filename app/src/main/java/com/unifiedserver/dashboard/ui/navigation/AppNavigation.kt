@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -53,6 +54,8 @@ fun AppNavigation(isSetupComplete: Boolean, preferences: PreferencesManager, han
         val navController = rememberNavController()
         val entry by navController.currentBackStackEntryAsState()
         val route = entry?.destination?.route
+        var lastMediaRoute by rememberSaveable { mutableStateOf("tv") }
+        LaunchedEffect(route) { if (route in mediaRoutes) lastMediaRoute = route!! }
         val pendingQuery by handoff.pendingQuery.collectAsStateWithLifecycle()
         fun navigateTop(destination: String) {
             navController.navigate(destination) {
@@ -76,7 +79,7 @@ fun AppNavigation(isSetupComplete: Boolean, preferences: PreferencesManager, han
                         destinations.forEach { item ->
                             NavigationBarItem(
                                 selected = route == item.route || (item.route == "tv" && route in mediaRoutes),
-                                onClick = { navigateTop(item.route) },
+                                onClick = { navigateTop(if (item.route == "tv") lastMediaRoute else item.route) },
                                 icon = { Icon(item.icon, contentDescription = null) },
                                 label = { Text(item.title) }
                             )

@@ -30,6 +30,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { viewModel.refreshConfiguration() }
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Local editable state
@@ -74,6 +75,9 @@ fun SettingsScreen(
             if (uiState.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
             uiState.configurationError?.let {
                 Text(it, color = StatusYellow, modifier = Modifier.padding(16.dp))
+                TextButton(onClick = { viewModel.refreshConfiguration() }, enabled = !uiState.isLoading) {
+                    Text("Retry loading settings")
+                }
             }
             // Server URL
             SectionHeader("Server")
@@ -197,7 +201,7 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = autoStopEnabled,
-                            enabled = !uiState.isLoading && !uiState.isSaving && uiState.configurationError == null,
+                            enabled = !uiState.isLoading && !uiState.isSaving && uiState.autoStopReady,
                             onCheckedChange = { autoStopEnabled = it },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Primary,
@@ -243,7 +247,7 @@ fun SettingsScreen(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Primary),
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isLoading && !uiState.isSaving && uiState.configurationError == null
+                        enabled = !uiState.isLoading && !uiState.isSaving && uiState.autoStopReady
                     ) {
                         Text(if (uiState.savingSection == "autoStop") "Saving…" else "Save Auto-Stop Config")
                     }
@@ -281,7 +285,7 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = autoCheckEnabled,
-                            enabled = !uiState.isLoading && !uiState.isSaving && uiState.configurationError == null,
+                            enabled = !uiState.isLoading && !uiState.isSaving && uiState.autoCheckReady,
                             onCheckedChange = { autoCheckEnabled = it },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Primary,
@@ -294,7 +298,7 @@ fun SettingsScreen(
                         onClick = { viewModel.saveAutoCheckEnabled(autoCheckEnabled) },
                         colors = ButtonDefaults.buttonColors(containerColor = Primary),
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isLoading && !uiState.isSaving && uiState.configurationError == null
+                        enabled = !uiState.isLoading && !uiState.isSaving && uiState.autoCheckReady
                     ) {
                         Text(if (uiState.savingSection == "autoCheck") "Saving…" else "Save Auto-Check")
                     }

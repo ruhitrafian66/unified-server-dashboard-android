@@ -112,6 +112,10 @@ fun ShowsScreen(
                 .padding(innerPadding)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
+                uiState.automationError?.let {
+                    Text("Auto-check unavailable: $it", color = StatusYellow, modifier = Modifier.padding(16.dp))
+                    TextButton(onClick = { viewModel.refreshAutomation() }) { Text("Retry auto-check settings") }
+                }
                 TabRow(
                     selectedTabIndex = selectedTab,
                     containerColor = Surface,
@@ -166,6 +170,7 @@ fun ShowsScreen(
                                     )
                                     Switch(
                                         checked = uiState.autoCheckEnabled,
+                                        enabled = uiState.autoCheckReady,
                                         onCheckedChange = { viewModel.setAutoCheckEnabled(it) },
                                         colors = SwitchDefaults.colors(
                                             checkedThumbColor = Primary,

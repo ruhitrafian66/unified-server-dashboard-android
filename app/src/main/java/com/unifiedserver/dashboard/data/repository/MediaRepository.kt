@@ -53,7 +53,7 @@ open class MediaRepository @Inject constructor(private val preferencesManager: P
         tmdb.getMovieDetail(id, requireApiKey()).requiredBody()
     }
 
-    suspend fun getTvDetail(id: Int): Result<TmdbTvDetail> = apiResult {
+    open suspend fun getTvDetail(id: Int): Result<TmdbTvDetail> = apiResult {
         tmdb.getTvDetail(id, requireApiKey()).requiredBody()
     }
 

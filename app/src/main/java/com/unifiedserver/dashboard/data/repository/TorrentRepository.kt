@@ -19,7 +19,7 @@ open class TorrentRepository @Inject constructor(
         }
     }
 
-    suspend fun addTorrent(urls: String): Result<Unit> = apiResult {
+    open suspend fun addTorrent(urls: String): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.addTorrent(AddTorrentRequest(urls))
         response.requireSuccess()

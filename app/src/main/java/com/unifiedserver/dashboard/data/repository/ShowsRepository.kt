@@ -65,7 +65,7 @@ open class ShowsRepository @Inject constructor(
         }
     }
 
-    suspend fun setAutoCheckEnabled(enabled: Boolean): Result<Unit> = apiResult {
+    open suspend fun setAutoCheckEnabled(enabled: Boolean): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.setAutoCheckConfig(AutoCheckUpdateRequest(enabled))
         response.requireSuccess()
