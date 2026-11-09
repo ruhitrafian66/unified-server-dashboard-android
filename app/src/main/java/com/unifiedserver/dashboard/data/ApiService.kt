@@ -53,8 +53,9 @@ interface ApiService {
     @GET("api/system/overview")
     suspend fun getOverview(): Response<SystemOverview>
 
-    @GET("api/system/cpu-history")
-    suspend fun getCpuHistory(@Query("hours") hours: Int = 1): Response<CpuHistoryResponse>
+    // metric is "cpu" or "temp"; hours is clamped to 1..96 by the server.
+    @GET("api/system/{metric}-history")
+    suspend fun getHistory(@Path("metric") metric: String, @Query("hours") hours: Int): Response<HistoryResponse>
 
     @POST("api/system/power/{action}")
     suspend fun powerAction(@Path("action") action: String): Response<ApiResponse<Any>>

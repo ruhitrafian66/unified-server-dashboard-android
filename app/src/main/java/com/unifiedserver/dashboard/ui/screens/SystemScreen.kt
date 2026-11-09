@@ -18,6 +18,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.unifiedserver.dashboard.data.models.DiskUsage
 import com.unifiedserver.dashboard.data.models.DockerContainer
 import com.unifiedserver.dashboard.data.models.ServiceStatus
+import com.unifiedserver.dashboard.data.repository.HistoryMetric
 import com.unifiedserver.dashboard.ui.utils.formatBytes
 import kotlin.math.roundToInt
 import com.unifiedserver.dashboard.ui.components.*
@@ -76,17 +77,21 @@ fun SystemScreen(
                         item { ResourceTiles(it) }
                     }
 
-                    uiState.cpuMetrics?.let { metrics ->
-                        item { SectionHeader("CPU", modifier = Modifier.padding(top = 8.dp)) }
-                        item {
-                            CpuHistoryCard(
-                                averageUsage = metrics.averageUsage,
-                                maxUsage = metrics.maxUsage,
-                                minUsage = metrics.minUsage,
-                                dataPoints = metrics.dataPoints,
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
-                        }
+                    item { SectionHeader("History", modifier = Modifier.padding(top = 8.dp)) }
+                    // Temperature only on boards that report one, as on the web dashboard.
+                    val metrics = HistoryMetric.entries.filter { m ->
+                        m != HistoryMetric.TEMPERATURE || overview?.temperature != null
+                    }
+                    items(metrics, key = { m -> m.path }) { metric ->
+                        val history = uiState.histories.getValue(metric)
+                        HistoryCard(
+                            scale = metric.scale(),
+                            samples = history.samples.orEmpty(),
+                            range = history.range,
+                            onRangeChange = { range -> viewModel.selectRange(metric, range) },
+                            loading = history.loading || history.samples == null,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
                     }
 
                     overview?.let {

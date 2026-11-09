@@ -144,37 +144,17 @@ data class ServiceStatus(
     val running: Boolean get() = status == "active"
 }
 
-// ─── CPU Monitoring ──────────────────────────────────────────────────────────
+// ─── Metric history (CPU, temperature) ────────────────────────────────────────
 
-data class CpuSample(
+/** One averaged point per minute: [t] in epoch seconds, [v] in the metric's unit. */
+data class HistorySample(
     val t: Long = 0,
     val v: Float = 0f
 )
 
-data class CpuHistoryResponse(
-    val samples: List<CpuSample> = emptyList(),
+data class HistoryResponse(
+    val samples: List<HistorySample> = emptyList(),
     val interval: Int = 60
-)
-
-data class CpuMetrics(
-    val currentUsage: Float = 0f,
-    val averageUsage: Float = 0f,
-    val maxUsage: Float = 0f,
-    val minUsage: Float = 0f,
-    val dataPoints: List<CpuDataPoint> = emptyList(),
-    @SerializedName("lastUpdated") val lastUpdated: Long = 0,
-    val cpuCount: Int = 0
-)
-
-data class CpuDataPoint(
-    val timestamp: Long = 0,
-    val usage: Float = 0f
-)
-
-data class CpuMetricsResponse(
-    val success: Boolean = true,
-    val data: CpuMetrics = CpuMetrics(),
-    val message: String? = null
 )
 
 // ─── Docker ──────────────────────────────────────────────────────────────────

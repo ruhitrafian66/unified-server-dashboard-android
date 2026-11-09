@@ -20,7 +20,6 @@ import com.unifiedserver.dashboard.ui.theme.*
 import com.unifiedserver.dashboard.ui.utils.formatBytes
 import com.unifiedserver.dashboard.ui.utils.formatEta
 import com.unifiedserver.dashboard.ui.utils.formatSpeed
-import com.unifiedserver.dashboard.data.models.CpuDataPoint
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 
