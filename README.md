@@ -21,8 +21,37 @@ adb -s DEVICE_SERIAL logcat --pid=APP_PID
 Use the same signing key for repeated installations. GitHub Actions' disposable
 debug keystore is not a stable deployment identity: CI APKs may not update a
 locally signed installation. For daily USB iteration build on the same Mac.
-Release builds are minified but unsigned; production signing and store publishing
-are not configured by this workflow.
+CI release builds are minified but unsigned.
+
+## Delivery to phones (self-hosted F-Droid)
+
+Phones get releases from an F-Droid repo on the home server, not over adb:
+
+```
+git ship   →  Mac: tests + signed assembleRelease (versionCode = commits on master)
+           →  scp to orangepi:/mnt/storage/fdroid  →  fdroid update (signed index)
+           →  nginx http://192.168.0.30/fdroid/repo  →  F-Droid on each phone
+```
+
+- `git ship` is a repo-local alias: `git config alias.ship '!git push origin master && scripts/deploy.sh'`.
+  `scripts/deploy.sh` only deploys a clean `master` that is already on GitHub, and
+  refuses an APK not signed with the release certificate
+  (SHA-256 `9a2c6152…db9b3a41`).
+- **App signing key:** `~/.android/keystores/unified-dashboard-release.jks`, password in the
+  macOS Keychain (service `unified-dashboard-release-keystore`). Never in git.
+- **Repo index key:** `/mnt/storage/fdroid/keystore.p12` on the server (copy in
+  `~/.android/keystores/fdroid-repo-backup/`). Fingerprint
+  `D7EAF236D8639B92E178341068442BBE8A268A004F725DDCD20557C9DE9351A5`.
+- **Back up both keys and the Keychain entry off this Mac.** Losing either one means
+  uninstalling and reinstalling the app on every phone.
+- Server setup is idempotent: `ssh orangepi 'bash -s' < scripts/setup-orangepi.sh`.
+  Repo data lives on the SSD, outside the `Server/` media library.
+
+Adding a phone (once): install the F-Droid client, then add the repo
+`http://192.168.0.30/fdroid/repo?fingerprint=D7EAF236D8639B92E178341068442BBE8A268A004F725DDCD20557C9DE9351A5`
+(Settings › Repositories › +). A copy installed from Android Studio or adb is signed
+with a debug key: uninstall it first (this clears its saved server URL). Updates
+arrive when F-Droid refreshes; pull to refresh to check immediately.
 
 ## User journeys
 

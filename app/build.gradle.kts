@@ -13,14 +13,28 @@ android {
         applicationId = "com.unifiedserver.dashboard"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // Deploys pass -PversionCode=<commit count> so every F-Droid build is newer.
+        versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
+        versionName = "1.0.$versionCode"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Release signing only when scripts/deploy.sh provides the key (kept out of git;
+    // its password comes from the macOS Keychain). Other release builds stay unsigned.
+    val releaseKeystore = System.getenv("RELEASE_KEYSTORE")?.let(::file)?.takeIf { it.exists() }
+    signingConfigs {
+        if (releaseKeystore != null) create("release") {
+            storeFile = releaseKeystore
+            storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "release"
+            keyPassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
