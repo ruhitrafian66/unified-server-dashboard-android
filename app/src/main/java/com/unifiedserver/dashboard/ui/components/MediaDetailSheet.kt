@@ -11,20 +11,27 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import com.unifiedserver.dashboard.data.models.*
 import com.unifiedserver.dashboard.ui.theme.*
+import com.unifiedserver.dashboard.data.repository.AutoDownloadPolicy
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,22 +43,36 @@ fun MediaDetailSheet(
     isLoading: Boolean,
     isDownloading: Boolean,
     showSeasonPicker: Boolean,
+    showAutomaticOptions: Boolean,
+    downloadSeason: Int?,
+    automaticRequested: Boolean,
     error: String?,
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
     onSeasonSelected: (Int) -> Unit,
-    onSeasonPickerDismiss: () -> Unit
+    onSeasonPickerDismiss: () -> Unit,
+    onAutoDownload: () -> Unit,
+    onConfirmAutomatic: (AutoDownloadPolicy) -> Unit,
+    onDismissAutomatic: () -> Unit
 ) {
     val isMovie = (item.mediaType ?: "movie") == "movie"
     val totalSeasons = tvDetail?.numberOfSeasons?.takeIf { it > 0 } ?: 1
+    val headerHeight = (LocalConfiguration.current.screenHeightDp.dp * 0.25f).coerceIn(96.dp, 220.dp)
 
     // Season picker dialog — shown before download for TV shows
     if (showSeasonPicker) {
         SeasonPickerDialog(
             showName = tvDetail?.name ?: item.displayTitle,
             totalSeasons = totalSeasons,
+            confirmLabel = if (automaticRequested) "Continue" else "Find sources",
             onConfirm = onSeasonSelected,
             onDismiss = onSeasonPickerDismiss
+        )
+    }
+    if (showAutomaticOptions) {
+        AutomaticDownloadDialog(
+            title = movieDetail?.title ?: tvDetail?.name ?: item.displayTitle,
+            season = downloadSeason, onConfirm = onConfirmAutomatic, onDismiss = onDismissAutomatic
         )
     }
 
@@ -70,7 +91,7 @@ fun MediaDetailSheet(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(220.dp)
+                    .height(headerHeight)
             ) {
                 val backdropUrl = movieDetail?.backdropUrl ?: tvDetail?.backdropUrl ?: item.backdropUrl
                 val posterUrl = movieDetail?.posterUrl ?: tvDetail?.posterUrl ?: item.posterUrl
@@ -285,13 +306,14 @@ fun MediaDetailSheet(
                 color = Background,
                 shadowElevation = 8.dp
             ) {
+                Column(Modifier.fillMaxWidth()) {
                 Button(
                     onClick = onDownload,
-                    enabled = !isDownloading && !isLoading,
+                    enabled = !isDownloading && !isLoading && (isMovie || (tvDetail?.numberOfSeasons ?: 0) > 0),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp)
-                        .height(52.dp),
+                        .heightIn(min = 52.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Primary),
                     shape = RoundedCornerShape(12.dp)
                 ) {
@@ -307,11 +329,18 @@ fun MediaDetailSheet(
                         Icon(Icons.Filled.Download, contentDescription = null, tint = OnPrimary)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (isMovie) "Find sources" else "Choose season to download",
+                            text = "Find sources",
                             color = OnPrimary,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
+                }
+                OutlinedButton(onClick = onAutoDownload,
+                    enabled = !isDownloading && !isLoading && error == null &&
+                        (if (isMovie) (movieDetail?.year ?: item.year).isNotBlank() else (tvDetail?.numberOfSeasons ?: 0) > 0),
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                    Text("Auto-download…")
+                }
                 }
             }
         }
@@ -374,14 +403,14 @@ private fun DetailInfoRow(label: String, value: String) {
 fun SeasonPickerDialog(
     showName: String,
     totalSeasons: Int,
+    confirmLabel: String = "Find sources",
     onConfirm: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var selectedSeason by remember { mutableIntStateOf(1) }
+    var selectedSeason by rememberSaveable(showName, totalSeasons) { mutableIntStateOf(1) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Surface,
         title = {
             Text(
                 text = "Select Season",
@@ -413,9 +442,10 @@ fun SeasonPickerDialog(
                             disabledContainerColor = SurfaceContainer,
                             disabledContentColor = StatusGray
                         ),
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        Text("−", style = MaterialTheme.typography.titleLarge, color = OnSurface)
+                        Text("−", style = MaterialTheme.typography.titleLarge, color = OnSurface,
+                            modifier = Modifier.semantics { contentDescription = "Previous season" })
                     }
 
                     Column(
@@ -449,9 +479,10 @@ fun SeasonPickerDialog(
                             disabledContainerColor = SurfaceContainer,
                             disabledContentColor = StatusGray
                         ),
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
-                        Text("+", style = MaterialTheme.typography.titleLarge, color = OnSurface)
+                        Text("+", style = MaterialTheme.typography.titleLarge, color = OnSurface,
+                            modifier = Modifier.semantics { contentDescription = "Next season" })
                     }
                 }
             }
@@ -464,7 +495,7 @@ fun SeasonPickerDialog(
             ) {
                 Icon(Icons.Filled.Download, contentDescription = null, tint = OnPrimary, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Download S%02d".format(selectedSeason), color = OnPrimary)
+                Text(confirmLabel, color = OnPrimary)
             }
         },
         dismissButton = {
@@ -473,4 +504,42 @@ fun SeasonPickerDialog(
             }
         }
     )
+}
+
+@Composable
+private fun AutomaticDownloadDialog(
+    title: String,
+    season: Int?,
+    onConfirm: (AutoDownloadPolicy) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var require4k by rememberSaveable(title, season) { mutableStateOf(false) }
+    var sizeGiB by rememberSaveable(title, season) { mutableStateOf("") }
+    val size = sizeGiB.trim().toLongOrNull()
+    val validSize = sizeGiB.isBlank() || (size != null && size in 1L..1000L)
+    AlertDialog(onDismissRequest = onDismiss,
+        title = { Text("Automatically add a download?") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(title + (season?.let { " · Season $it" } ?: ""))
+                Spacer(Modifier.height(12.dp))
+                Text("This searches and adds one matching source without another confirmation. It requires at least one seeder and known file size. No lower-quality fallback is used.")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = require4k, onCheckedChange = { require4k = it })
+                    Text("Require 4K (otherwise 1080p or higher)", Modifier.weight(1f))
+                }
+                OutlinedTextField(value = sizeGiB, onValueChange = { sizeGiB = it },
+                    label = { Text("Maximum size in GiB (optional)") },
+                    supportingText = { Text(if (validSize) "Blank means no size limit." else "Enter 1–1000 GiB.") },
+                    isError = !validSize, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                Spacer(Modifier.height(8.dp))
+                Text("Among eligible sources, the most-seeded one wins. Filename matching cannot guarantee file contents.")
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = validSize, onClick = {
+                onConfirm(AutoDownloadPolicy(if (require4k) 2160 else 1080, size?.times(1024L * 1024L * 1024L)))
+            }) { Text("Search and auto-download") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }

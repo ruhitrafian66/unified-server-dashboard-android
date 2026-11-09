@@ -6,7 +6,6 @@ import com.unifiedserver.dashboard.MemoryStore
 import com.unifiedserver.dashboard.data.PreferencesManager
 import com.unifiedserver.dashboard.data.models.*
 import com.unifiedserver.dashboard.data.repository.*
-import com.unifiedserver.dashboard.ui.utils.orderedDisks
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.*
@@ -58,7 +57,9 @@ class WorkflowTest {
 
     private class MediaFake(prefs: PreferencesManager) : MediaRepository(prefs) {
         override suspend fun getTrendingTv() = Result.success(emptyList<TmdbMediaItem>())
-        override suspend fun getTrendingMovies() = Result.success(emptyList<TmdbMediaItem>())
+        var moviePages = 3
+        override suspend fun getNewOnStreamingMovies(page: Int) = Result.success(TmdbTrendingResponse(page,
+            listOf(TmdbMediaItem(id = 100 + page, title = "Movie $page", mediaType = "movie")), moviePages, moviePages))
         override suspend fun searchMovies(query: String, page: Int): Result<TmdbTrendingResponse> {
             delay(if (query == "old") 1_000 else 10)
             return Result.success(TmdbTrendingResponse(page, listOf(TmdbMediaItem(id = page, title = query, mediaType = "movie")), 2, 2))
@@ -67,6 +68,8 @@ class WorkflowTest {
             delay(if (id == 1) 1_000 else 10)
             return Result.success(TmdbMovieDetail(id = id, title = "Movie $id"))
         }
+        override suspend fun getTvDetail(id: Int) =
+            Result.success(TmdbTvDetail(id = id, name = "Example Show", numberOfSeasons = 4))
     }
 
     @Test fun newerSearchCancelsOlderRequestAndClearStaysClear() = runTest {
@@ -105,7 +108,8 @@ class WorkflowTest {
         val vm = MediaViewModel(MediaFake(preferences()), handoff)
         vm.openDetail(TmdbMediaItem(id = 3, title = "Title", releaseDate = "2024-01-01"))
         vm.downloadFromDetail()
-        assertEquals("Title 2024", handoff.pendingQuery.value)
+        assertEquals("Title 2024", handoff.pendingQuery.value?.query)
+        assertEquals(false, handoff.pendingQuery.value?.autoPick)
         assertNull(vm.uiState.value.selectedItem)
         handoff.consume()
         assertNull(handoff.pendingQuery.value)
@@ -126,7 +130,7 @@ class WorkflowTest {
 
     @Test fun stoppedSearchExitsPollingAndZeroIsValidSearchId() = runTest {
         val repo = TorrentFake(preferences())
-        val vm = TorrentsViewModel(repo)
+        val vm = TorrentsViewModel(repo, DownloadsMonitor(repo))
         vm.startSearch("query")
         advanceUntilIdle()
         advanceTimeBy(60_000)
@@ -139,7 +143,7 @@ class WorkflowTest {
 
     @Test fun clearingTorrentSearchCancelsLateResults() = runTest {
         val repo = TorrentFake(preferences()).apply { slow = true }
-        val vm = TorrentsViewModel(repo)
+        val vm = TorrentsViewModel(repo, DownloadsMonitor(repo))
         vm.startSearch("query")
         runCurrent()
         vm.clearSearch()
@@ -161,7 +165,7 @@ class WorkflowTest {
                     "Stopped", 4))
             }
         }
-        val vm = TorrentsViewModel(repo)
+        val vm = TorrentsViewModel(repo, DownloadsMonitor(repo))
         vm.startSearch("query")
         advanceUntilIdle()
         vm.loadMoreResults()
@@ -174,9 +178,8 @@ class WorkflowTest {
         vm.viewModelScope.cancel()
     }
 
-    @Test fun unrelatedPreferenceChangePreservesAutoCheckAndRejectedSavePreservesLocalConfig() = runTest {
+    @Test fun unrelatedPreferenceChangePreservesAutoCheckAndRejectedSavePreservesServerConfig() = runTest {
         val prefs = preferences()
-        prefs.updateAutoStopConfig(false, 60, 1f)
         val torrents = object : TorrentRepository(prefs) {
             override suspend fun getAutoStopConfig() = Result.success(AutoStopConfig(false, 60, 1f))
             override suspend fun setAutoStopConfig(config: AutoStopConfig) = Result.failure<Unit>(Exception("Rejected"))
@@ -184,36 +187,90 @@ class WorkflowTest {
         val shows = object : ShowsRepository(prefs) {
             override suspend fun getAutoCheckConfig() = Result.success(AutoCheckConfig(enabled = true))
         }
-        val vm = SettingsViewModel(prefs, torrents, shows, DashboardRepository(prefs))
+        val vm = SettingsViewModel(prefs, torrents, shows, DashboardRepository(prefs),
+            AutomationSettingsRepository(prefs, torrents, shows))
         runCurrent()
-        prefs.updateTmdbApiKey("test-only")
+        prefs.updateOmdbApiKey("test-only")
         runCurrent()
         assertTrue(vm.uiState.value.autoCheckEnabled)
         vm.saveAutoStopConfig(true, "5", "2.0")
         runCurrent()
-        assertFalse(prefs.autoStopEnabled.first())
-        assertEquals(60, prefs.autoStopSeedingTime.first())
+        assertFalse(vm.uiState.value.autoStopEnabled)
+        assertEquals(60, vm.uiState.value.autoStopMinutes)
         assertEquals("Rejected", vm.uiState.value.snackbarMessage)
         vm.viewModelScope.cancel()
     }
 
-    @Test fun validatesNumericSettingsWithoutSilentDefaults() {
+    @Test fun validatesSeedingLimitsAndTreatsBlankAsNoLimit() {
         assertEquals(5 to 1.5f, parseAutoStopLimits("5", "1,5"))
-        listOf("", "-1", "NaN", "Infinity", "garbage").forEach { ratio ->
+        assertEquals(null to 2f, parseAutoStopLimits("", "2"))
+        assertEquals(30 to null, parseAutoStopLimits("30", " "))
+        assertEquals(null to null, parseAutoStopLimits("", ""))
+        listOf("-1", "NaN", "Infinity", "garbage").forEach { ratio ->
             assertThrows(IllegalArgumentException::class.java) { parseAutoStopLimits("5", ratio) }
         }
-        assertThrows(IllegalArgumentException::class.java) { parseAutoStopLimits("", "1") }
+        listOf("-1", "1.5", "x").forEach { minutes ->
+            assertThrows(IllegalArgumentException::class.java) { parseAutoStopLimits(minutes, "1") }
+        }
     }
 
-    @Test fun dateAddedSortUsesActualAddedTimestamp() {
-        val old = Torrent(name = "old", addedOn = 1, seedingTime = 100)
-        val recent = Torrent(name = "recent", addedOn = 2, seedingTime = 0)
-        assertEquals(listOf(recent, old), sortTorrents(listOf(old, recent), TorrentSortOption.DATE_ADDED, SortOrder.DESCENDING))
+    @Test fun moviesLoadMoreAppendsNextStreamingPageAndStopsAtLastPage() = runTest {
+        val media = MediaFake(preferences()).apply { moviePages = 2 }
+        val vm = MediaViewModel(media, DownloadHandoff())
+        advanceUntilIdle()
+        assertEquals(listOf(101), vm.uiState.value.trendingMovies.map { it.id })
+        vm.loadMoreMovies()
+        advanceUntilIdle()
+        assertEquals(listOf(101, 102), vm.uiState.value.trendingMovies.map { it.id })
+        assertEquals(2, vm.uiState.value.moviesPage)
+        vm.loadMoreMovies()
+        advanceUntilIdle()
+        assertEquals(2, vm.uiState.value.trendingMovies.size)
+        vm.viewModelScope.cancel()
     }
 
-    @Test fun storageOrderIsSharedAndDoesNotHideNvmeOrRoot() {
-        val root = DiskDevice(device = "mmcblk0", mountPoint = "/")
-        val media = DiskDevice(device = "nvme0n1", mountPoint = "/media")
-        assertEquals(listOf(media, root), orderedDisks(listOf(root, media)))
+    @Test fun storageListsMediaFirstAndWarnsOnlyForFullSeparateSystemDisk() {
+        val root = DiskUsage(mountPoint = "/", size = 100, used = 90, available = 10, percent = 90f)
+        val media = DiskUsage(mountPoint = "/mnt/storage", size = 1000, used = 100, available = 900, percent = 10f)
+        val overview = SystemOverview(disks = OverviewDisks(root = root, storage = media))
+        assertEquals(listOf("Media storage" to media, "System disk" to root),
+            com.unifiedserver.dashboard.ui.components.overviewDisks(overview))
+        assertNotNull(com.unifiedserver.dashboard.ui.components.systemDiskWarning(overview))
+        // Same mount (no separate SSD): show it once, no SD-card warning.
+        val single = SystemOverview(disks = OverviewDisks(root = root, storage = root))
+        assertEquals(1, com.unifiedserver.dashboard.ui.components.overviewDisks(single).size)
+        assertNull(com.unifiedserver.dashboard.ui.components.systemDiskWarning(single))
+    }
+
+    @Test fun automaticDownloadRequiresSeparateConfirmationAndCarriesRules() = runTest {
+        val handoff = DownloadHandoff()
+        val vm = MediaViewModel(MediaFake(preferences()), handoff)
+        vm.openDetail(TmdbMediaItem(id = 3, title = "Title", releaseDate = "2024-01-01"))
+        vm.downloadFromDetail(autoPick = true)
+        assertNull(handoff.pendingQuery.value)
+        assertTrue(vm.uiState.value.showAutomaticOptions)
+        vm.confirmAutomaticDownload(AutoDownloadPolicy(minimumResolution = 2160, maximumBytes = 1000))
+        assertEquals(true, handoff.pendingQuery.value?.autoPick)
+        assertEquals(2160, handoff.pendingQuery.value?.policy?.minimumResolution)
+        assertEquals(1000L, handoff.pendingQuery.value?.policy?.maximumBytes)
+        assertNull(vm.uiState.value.selectedItem)
+        assertFalse(vm.uiState.value.showAutomaticOptions)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun tvSelectionDoesNotAddTheSeriesPremiereYearAndClosingClearsDialogs() = runTest {
+        val handoff = DownloadHandoff()
+        val vm = MediaViewModel(MediaFake(preferences()), handoff)
+        vm.openDetail(TmdbMediaItem(id = 3, name = "Example Show", mediaType = "tv", firstAirDate = "2020-01-01"))
+        advanceUntilIdle()
+        vm.downloadFromDetail()
+        assertTrue(vm.uiState.value.showSeasonPicker)
+        vm.downloadWithSeason(2)
+        assertEquals("Example Show S02", handoff.pendingQuery.value?.query)
+        assertEquals(false, handoff.pendingQuery.value?.autoPick)
+        assertEquals(2, handoff.pendingQuery.value?.season)
+        assertNull(handoff.pendingQuery.value?.year)
+        assertFalse(vm.uiState.value.showSeasonPicker)
+        vm.viewModelScope.cancel()
     }
 }

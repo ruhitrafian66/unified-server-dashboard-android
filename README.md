@@ -26,18 +26,48 @@ are not configured by this workflow.
 
 ## User journeys
 
-- **Home**: health, last update, download previews and server summaries.
-- **Media**: Movies, TV discovery and Tracked shows.
-- **Downloads**: source search, paginated results and active transfers.
-- **Server**: resources, services, all storage devices and confirmed power actions.
+- **Home**: health, last update, resources, VPN and qBittorrent status.
+- **Media**: Movies, TV discovery, Tracked shows and Torrents (source search,
+  paginated results, magnet links).
+- **Storage**: the server's download folder as a media library (`/api/library`):
+  clean movie/TV entries with posters, seasons and episodes, duplicate and partial
+  detection, junk cleanup and delete (which also removes the torrent).
+- **Downloads bar**: shown above the navigation while torrents download; cycles
+  through several (paused while touched); tap to stop, start or remove.
+- **Server**: resources, temperature, media and system storage, VPN and qBittorrent
+  status, services, containers and confirmed power actions.
 - **Settings**: accessible from screen toolbars; server URLs are tested before saving.
 
-“Find sources” passes a title/year to Downloads, which owns the search operation.
-It does not immediately download a file. Select a source to add it.
+“Find sources” is always manual: it passes the title/year (or title/season) to
+Media › Torrents and presents sources for you to select. It never automatically adds a file.
 
-TMDB is optional for server management but required for media discovery.
-An optional personal OMDb key enables IMDb ratings. Keys are held in the app's
-private preferences; request bodies are not logged. Configure only a trusted
+“Auto-download…” is a separate opt-in action with confirmation. Its rules require
+1080p or higher (optionally 4K), at least one seeder, a known file size and a
+filename matching the title plus movie year or TV season. An optional maximum
+size can be set. Eligible sources are ranked by seeders across resolutions.
+There is no silent lower-quality fallback. Filename metadata is a heuristic,
+not a guarantee about actual file contents; choose manually when uncertain.
+
+Automatic searches wait for completed server results and inspect all reported
+pages, up to 2,000 results and a five-minute overall deadline. Incomplete or
+oversized result sets require manual selection. A persistent Torrents card
+shows searching, selection, adding, success, failure and cancellation. Once an
+add request is sent, it cannot be safely cancelled or automatically retried:
+check the downloads bar first if the network outcome is uncertain.
+
+Settings and Tracked shows share one server-confirmed automation snapshot.
+Failed refreshes retain known values and expose retry without changing them.
+
+The app targets the backend's current API (unified-server-dashboard `7474439`):
+every write sends `X-Requested-With: dashboard` (the backend's CSRF guard), and
+Home/Server read one `/api/system/overview` call that tolerates partial failures.
+
+TMDB is optional for server management but required for media discovery. Its key
+is stored on the server (Settings → TMDB, verified before saving) and all TMDB
+requests go through the backend's `/api/tmdb` proxy, so it works on every device.
+Movies lists films newly out on digital/streaming, not cinema-only trending.
+An optional personal OMDb key enables IMDb ratings; it is held in the app's
+private preferences. Request bodies are not logged. Configure only a trusted
 backend. This repository does not establish or audit backend authentication.
 HTTPS is the default; the network-security XML has explicit legacy local-host
 HTTP exceptions, not a private-network wildcard.

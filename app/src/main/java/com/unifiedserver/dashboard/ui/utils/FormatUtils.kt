@@ -18,9 +18,6 @@ fun formatBytes(bytes: Long): String {
     return "%.1f %s".format(bytes / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups.coerceAtMost(4)])
 }
 
-fun orderedDisks(disks: List<com.unifiedserver.dashboard.data.models.DiskDevice>) =
-    disks.sortedWith(compareBy({ it.mountPoint == "/" || it.mountPoint.startsWith("/boot") }, { it.mountPoint }))
-
 /**
  * Format bytes per second to speed string (B/s, KB/s, MB/s, etc.)
  */
@@ -46,14 +43,14 @@ fun formatEta(seconds: Long): String {
 
 /**
  * Format uptime in seconds to human-readable uptime string
- * Examples: "2d 5h 30m", "3h 45m", "25m"
+ * Examples: "2d 5h", "3h 45m", "25m"
  */
 fun formatUptime(seconds: Long): String {
     val d = seconds / 86400
     val h = (seconds % 86400) / 3600
     val m = (seconds % 3600) / 60
     return when {
-        d > 0 -> "${d}d ${h}h ${m}m"
+        d > 0 -> "${d}d ${h}h"
         h > 0 -> "${h}h ${m}m"
         else -> "${m}m"
     }

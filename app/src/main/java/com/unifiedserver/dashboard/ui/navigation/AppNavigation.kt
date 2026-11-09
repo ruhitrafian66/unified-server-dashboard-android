@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -13,21 +14,51 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
 import com.unifiedserver.dashboard.data.PreferencesManager
 import com.unifiedserver.dashboard.data.repository.DownloadHandoff
+import com.unifiedserver.dashboard.ui.components.DownloadsBar
 import com.unifiedserver.dashboard.ui.screens.*
 import com.unifiedserver.dashboard.ui.theme.Background
+import com.unifiedserver.dashboard.ui.theme.OnSurface
 import com.unifiedserver.dashboard.ui.theme.Surface
 
 private data class Destination(val route: String, val title: String, val icon: ImageVector)
 private val destinations = listOf(
     Destination("dashboard", "Home", Icons.Default.Dashboard),
     Destination("tv", "Media", Icons.Default.Movie),
-    Destination("torrents", "Downloads", Icons.Default.Download),
+    Destination("storage", "Storage", Icons.Default.SdStorage),
     Destination("system", "Server", Icons.Default.Memory)
 )
-private val mediaRoutes = listOf("movies", "tv", "shows")
+// Media tabs; "torrents" is where "Find sources" and auto-download land.
+private val mediaRoutes = listOf("movies", "tv", "shows", "torrents")
+private val mediaTabLabels = listOf("Movies", "TV", "Tracked", "Torrents")
 val LocalOpenSettings = staticCompositionLocalOf<() -> Unit> { {} }
-val LocalOpenDownloads = staticCompositionLocalOf<() -> Unit> { {} }
+val LocalOpenStorage = staticCompositionLocalOf<() -> Unit> { {} }
 val LocalNavigateBack = staticCompositionLocalOf<() -> Unit> { {} }
+
+/** The Media tab row; provided only on Media routes and drawn by [AppTopBar] under the title. */
+val LocalMediaTabs = compositionLocalOf<(@Composable () -> Unit)?> { null }
+
+/** The one title bar every screen uses: screen actions first, Settings last. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppTopBar(
+    title: String,
+    showBack: Boolean = false,
+    showSettings: Boolean = true,
+    actions: @Composable RowScope.() -> Unit = {}
+) {
+    Column {
+        TopAppBar(
+            title = { Text(title, style = MaterialTheme.typography.titleLarge) },
+            navigationIcon = { if (showBack) BackAction() },
+            actions = {
+                actions()
+                if (showSettings) SettingsAction()
+            },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = Surface, titleContentColor = OnSurface)
+        )
+        LocalMediaTabs.current?.invoke()
+    }
+}
 
 @Composable
 fun SettingsAction() {
@@ -53,6 +84,8 @@ fun AppNavigation(isSetupComplete: Boolean, preferences: PreferencesManager, han
         val navController = rememberNavController()
         val entry by navController.currentBackStackEntryAsState()
         val route = entry?.destination?.route
+        var lastMediaRoute by rememberSaveable { mutableStateOf("tv") }
+        LaunchedEffect(route) { if (route in mediaRoutes) lastMediaRoute = route!! }
         val pendingQuery by handoff.pendingQuery.collectAsStateWithLifecycle()
         fun navigateTop(destination: String) {
             navController.navigate(destination) {
@@ -66,33 +99,40 @@ fun AppNavigation(isSetupComplete: Boolean, preferences: PreferencesManager, han
         }
         CompositionLocalProvider(
             LocalOpenSettings provides { navController.navigate("settings") { launchSingleTop = true } },
-            LocalOpenDownloads provides { navigateTop("torrents") },
-            LocalNavigateBack provides { navController.popBackStack() }
+            LocalOpenStorage provides { navigateTop("storage") },
+            LocalNavigateBack provides { navController.popBackStack() },
+            LocalMediaTabs provides if (route in mediaRoutes) {
+                {
+                    TabRow(selectedTabIndex = mediaRoutes.indexOf(route), containerColor = Surface) {
+                        mediaTabLabels.forEachIndexed { index, label ->
+                            Tab(selected = route == mediaRoutes[index], text = { Text(label) },
+                                onClick = { navigateTop(mediaRoutes[index]) },
+                                unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            } else null
         ) {
             Scaffold(
                 containerColor = Background,
                 bottomBar = {
-                    if (isSetupComplete) NavigationBar(containerColor = Surface) {
-                        destinations.forEach { item ->
-                            NavigationBarItem(
-                                selected = route == item.route || (item.route == "tv" && route in mediaRoutes),
-                                onClick = { navigateTop(item.route) },
-                                icon = { Icon(item.icon, contentDescription = null) },
-                                label = { Text(item.title) }
-                            )
+                    if (isSetupComplete) Column {
+                        // Live progress while anything downloads, on every screen.
+                        if (route != "settings") DownloadsBar()
+                        NavigationBar(containerColor = Surface) {
+                            destinations.forEach { item ->
+                                NavigationBarItem(
+                                    selected = route == item.route || (item.route == "tv" && route in mediaRoutes),
+                                    onClick = { navigateTop(if (item.route == "tv") lastMediaRoute else item.route) },
+                                    icon = { Icon(item.icon, contentDescription = null) },
+                                    label = { Text(item.title) }
+                                )
+                            }
                         }
                     }
                 }
             ) { padding ->
                 Column(Modifier.padding(padding).consumeWindowInsets(padding)) {
-                    if (route in mediaRoutes) {
-                        TabRow(selectedTabIndex = mediaRoutes.indexOf(route), containerColor = Surface) {
-                            listOf("Movies", "TV", "Tracked").forEachIndexed { index, label ->
-                                Tab(selected = route == mediaRoutes[index], text = { Text(label) },
-                                    onClick = { navigateTop(mediaRoutes[index]) })
-                            }
-                        }
-                    }
                     NavHost(navController, if (isSetupComplete) "dashboard" else "setup", Modifier.weight(1f)) {
                         composable("setup") {
                             SetupScreen(onConfigured = {
@@ -103,6 +143,7 @@ fun AppNavigation(isSetupComplete: Boolean, preferences: PreferencesManager, han
                         composable("torrents") { TorrentsScreen(handoff = handoff) }
                         composable("tv") { TvScreen() }
                         composable("movies") { MoviesScreen() }
+                        composable("storage") { StorageScreen() }
                         composable("system") { SystemScreen() }
                         composable("settings") { SettingsScreen() }
                         composable("shows") { ShowsScreen() }

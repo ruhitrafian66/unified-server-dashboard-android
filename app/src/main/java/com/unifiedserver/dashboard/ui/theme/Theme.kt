@@ -23,6 +23,15 @@ private val DarkColorScheme = darkColorScheme(
     surface = Surface,
     onSurface = OnSurface,
     surfaceVariant = SurfaceVariant,
+    // Dialogs, sheets, menus and the navigation bar read these container roles;
+    // left unset they fall back to Material's purple-tinted baseline.
+    surfaceDim = Background,
+    surfaceBright = SurfaceContainer,
+    surfaceContainerLowest = Background,
+    surfaceContainerLow = Surface,
+    surfaceContainer = Surface,
+    surfaceContainerHigh = SurfaceVariant,
+    surfaceContainerHighest = SurfaceContainer,
     onSurfaceVariant = Color(0xFF8B949E),
     outline = Color(0xFF30363D),
     outlineVariant = Color(0xFF21262D),

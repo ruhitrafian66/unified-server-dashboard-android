@@ -15,6 +15,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Queue
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.VideoLibrary
+import com.unifiedserver.dashboard.ui.navigation.AppTopBar
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -39,7 +41,7 @@ fun ShowsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     var showAddDialog by remember { mutableStateOf(false) }
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var showSeasonSheet by rememberSaveable { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
     var deleteShow by remember { mutableStateOf<Show?>(null) }
     var confirmClearQueue by rememberSaveable { mutableStateOf(false) }
@@ -55,50 +57,22 @@ fun ShowsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Tracked shows", style = MaterialTheme.typography.titleLarge) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Surface,
-                    titleContentColor = OnSurface
-                ),
-                actions = {
-                    com.unifiedserver.dashboard.ui.navigation.SettingsAction()
-                    uiState.queueStatus?.let { queue ->
-                        if (queue.queueLength > 0 || queue.processing) {
-                            IconButton(onClick = { showQueueSheet = true }) {
-                                BadgedBox(
-                                    badge = {
-                                        Badge { Text(queue.queueLength.toString()) }
-                                    }
-                                ) {
-                                    Icon(Icons.Filled.Queue, contentDescription = "Queue", tint = Primary)
-                                }
-                            }
-                        }
-                    }
-                    if (uiState.isCheckingEpisodes) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp).padding(end = 8.dp),
-                            color = Primary,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        IconButton(onClick = { viewModel.checkEpisodes() }) {
-                            Icon(Icons.Filled.Refresh, contentDescription = "Check episodes", tint = Primary)
+            AppTopBar("Media") {
+                uiState.queueStatus?.takeIf { it.queueLength > 0 || it.processing }?.let { queue ->
+                    IconButton(onClick = { showQueueSheet = true }) {
+                        BadgedBox(badge = { Badge { Text(queue.queueLength.toString()) } }) {
+                            Icon(Icons.Filled.Queue, contentDescription = "Search queue, ${queue.queueLength} waiting")
                         }
                     }
                 }
-            )
+                IconButton(onClick = { showSeasonSheet = true }) {
+                    Icon(Icons.Filled.VideoLibrary, contentDescription = "Download a season")
+                }
+            }
         },
         floatingActionButton = {
-            if (selectedTab == 0) {
-                FloatingActionButton(
-                    onClick = { showAddDialog = true },
-                    containerColor = Primary,
-                    contentColor = OnPrimary
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add show")
-                }
+            FloatingActionButton(onClick = { showAddDialog = true }, containerColor = Primary, contentColor = OnPrimary) {
+                Icon(Icons.Filled.Add, contentDescription = "Track a show")
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -107,95 +81,47 @@ fun ShowsScreen(
         RefreshBox(
             isRefreshing = uiState.isLoading,
             onRefresh = { viewModel.refresh() },
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
+            modifier = Modifier.fillMaxSize().padding(innerPadding)
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                TabRow(
-                    selectedTabIndex = selectedTab,
-                    containerColor = Surface,
-                    contentColor = Primary
-                ) {
-                    Tab(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        text = { Text("Tracked") }
-                    )
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        text = { Text("Season Download") }
-                    )
-                }
-
-                when {
-                    selectedTab == 1 -> {
-                        SeasonDownloadTab(
-                            uiState = uiState,
-                            onSearch = { viewModel.searchTmdb(it) },
-                            onDownload = { tmdbId, name, season ->
-                                viewModel.downloadSeasonPack(tmdbId, name, season)
-                            },
-                            onClearProgress = { viewModel.clearDownloadProgress() }
+            when {
+                uiState.error != null && uiState.shows.isEmpty() ->
+                    ErrorScreen(message = uiState.error ?: "Failed to load shows", onRetry = { viewModel.refresh() })
+                else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 88.dp)) {
+                    item {
+                        AutoCheckCard(
+                            enabled = uiState.autoCheckEnabled,
+                            ready = uiState.autoCheckReady,
+                            error = uiState.automationError,
+                            activeCount = uiState.shows.count { it.status == "active" },
+                            totalCount = uiState.shows.size,
+                            isChecking = uiState.isCheckingEpisodes,
+                            onToggle = { viewModel.setAutoCheckEnabled(it) },
+                            onCheckNow = { viewModel.checkEpisodes() },
+                            onRetry = { viewModel.refreshAutomation() }
                         )
                     }
-                    uiState.error != null && uiState.shows.isEmpty() -> {
-                        ErrorScreen(
-                            message = uiState.error ?: "Failed to load shows",
-                            onRetry = { viewModel.refresh() }
+                    if (uiState.shows.isEmpty() && !uiState.isLoading) item { EmptyShowsView() }
+                    items(uiState.shows, key = { it.id }) { show ->
+                        ShowItem(
+                            show = show,
+                            onToggleStatus = { viewModel.toggleShowStatus(show) },
+                            onDownloadSeason = { viewModel.downloadSeason(show) },
+                            onDelete = { deleteShow = show }
                         )
-                    }
-                    uiState.shows.isEmpty() && !uiState.isLoading -> {
-                        EmptyShowsView()
-                    }
-                    else -> {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            item {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Auto-check new episodes",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Switch(
-                                        checked = uiState.autoCheckEnabled,
-                                        onCheckedChange = { viewModel.setAutoCheckEnabled(it) },
-                                        colors = SwitchDefaults.colors(
-                                            checkedThumbColor = Primary,
-                                            checkedTrackColor = PrimaryVariant
-                                        )
-                                    )
-                                }
-                            }
-                            item {
-                                ShowsSummaryRow(
-                                    activeCount = uiState.shows.count { it.status == "active" },
-                                    totalCount = uiState.shows.size
-                                )
-                            }
-                        items(
-                            items = uiState.shows,
-                            key = { it.id }
-                        ) { show ->
-                            ShowItem(
-                                show = show,
-                                onToggleStatus = { viewModel.toggleShowStatus(show) },
-                                onDownloadSeason = { viewModel.downloadSeason(show) },
-                                onDelete = { deleteShow = show }
-                            )
-                        }
-                        item { Spacer(modifier = Modifier.height(80.dp)) }
-                        }
                     }
                 }
             }
+        }
+    }
+
+    if (showSeasonSheet) {
+        ModalBottomSheet(onDismissRequest = { showSeasonSheet = false }) {
+            SeasonDownloadTab(
+                uiState = uiState,
+                onSearch = { viewModel.searchTmdb(it) },
+                onDownload = { tmdbId, name, season -> viewModel.downloadSeasonPack(tmdbId, name, season) },
+                onClearProgress = { viewModel.clearDownloadProgress() }
+            )
         }
     }
 
@@ -245,43 +171,66 @@ fun ShowsScreen(
 }
 
 @Composable
-fun ShowsSummaryRow(activeCount: Int, totalCount: Int) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+private fun AutoCheckCard(
+    enabled: Boolean,
+    ready: Boolean,
+    error: String?,
+    activeCount: Int,
+    totalCount: Int,
+    isChecking: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onCheckNow: () -> Unit,
+    onRetry: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Surface),
+        shape = RoundedCornerShape(12.dp)
     ) {
-        Text(
-            text = "$totalCount show(s)",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = "$activeCount active",
-            style = MaterialTheme.typography.labelMedium,
-            color = StatusGreen
-        )
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Auto-check new episodes", style = MaterialTheme.typography.bodyMedium, color = OnSurface)
+                    Text(
+                        if (totalCount == 0) "No shows tracked yet" else "$activeCount of $totalCount shows active",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = enabled, enabled = ready, onCheckedChange = onToggle)
+            }
+            error?.let {
+                Text("Auto-check unavailable: $it", style = MaterialTheme.typography.bodySmall, color = StatusYellow,
+                    modifier = Modifier.padding(top = 8.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isChecking) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Checking all active shows…", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                } else {
+                    Spacer(Modifier.weight(1f))
+                    if (error != null) TextButton(onClick = onRetry) { Text("Retry") }
+                    TextButton(onClick = onCheckNow, enabled = activeCount > 0) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Check now")
+                    }
+                }
+            }
+        }
     }
-    HorizontalDivider(color = Divider)
 }
 
 @Composable
 fun EmptyShowsView() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = "No shows tracked",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Tap + to add a TV show",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+    Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("No shows tracked", style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(8.dp))
+        Text("Tap + to track a TV show. New episodes download automatically.",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
@@ -611,11 +560,13 @@ fun SeasonDownloadTab(
 
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
+            .fillMaxWidth()
+            .imePadding()
+            .padding(start = 16.dp, end = 16.dp, bottom = 24.dp)
     ) {
+        Text("Download a season", style = MaterialTheme.typography.titleMedium, color = OnSurface)
         Text(
-            text = "Search TMDB and download a complete season pack.",
+            text = "Find a show and get a whole season, as a pack when one exists.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

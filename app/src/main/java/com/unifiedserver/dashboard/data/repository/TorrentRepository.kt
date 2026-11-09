@@ -15,19 +15,13 @@ open class TorrentRepository @Inject constructor(
         if (response.isSuccessful) {
             response.body() ?: emptyList()
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
     }
 
-    suspend fun addTorrent(urls: String): Result<Unit> = apiResult {
+    open suspend fun addTorrent(urls: String): Result<Unit> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.addTorrent(AddTorrentRequest(urls))
-        response.requireSuccess()
-    }
-
-    suspend fun addTorrentAdvanced(urls: String, savePath: String, category: String? = null): Result<Unit> = apiResult {
-        val service = buildApiService(preferencesManager)
-        val response = service.addTorrentAdvanced(AddTorrentAdvancedRequest(urls, savePath, category))
         response.requireSuccess()
     }
 
@@ -55,7 +49,7 @@ open class TorrentRepository @Inject constructor(
         if (response.isSuccessful) {
             response.body()?.id ?: throw Exception("No search ID returned")
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
     }
 
@@ -70,7 +64,7 @@ open class TorrentRepository @Inject constructor(
                 else -> statusList.first()
             }
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
     }
 
@@ -86,7 +80,7 @@ open class TorrentRepository @Inject constructor(
                 else -> results
             }
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
     }
 
@@ -102,7 +96,7 @@ open class TorrentRepository @Inject constructor(
         if (response.isSuccessful) {
             response.body() ?: AutoStopConfig()
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
     }
 

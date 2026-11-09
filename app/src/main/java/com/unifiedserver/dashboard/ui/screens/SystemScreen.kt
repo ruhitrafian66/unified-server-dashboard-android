@@ -15,10 +15,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.unifiedserver.dashboard.data.models.DiskDevice
+import com.unifiedserver.dashboard.data.models.DiskUsage
 import com.unifiedserver.dashboard.data.models.DockerContainer
 import com.unifiedserver.dashboard.data.models.ServiceStatus
-import com.unifiedserver.dashboard.data.models.SystemInfo
+import com.unifiedserver.dashboard.ui.utils.formatBytes
+import kotlin.math.roundToInt
 import com.unifiedserver.dashboard.ui.components.*
 import com.unifiedserver.dashboard.ui.theme.*
 
@@ -28,7 +29,7 @@ fun SystemScreen(
     viewModel: SystemViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    RefreshWhileVisible(15_000) { viewModel.loadAll(silent = uiState.systemInfo != null) }
+    RefreshWhileVisible(15_000) { viewModel.loadAll(silent = uiState.overview != null) }
     val snackbarHostState = remember { SnackbarHostState() }
     var showPowerDialog by remember { mutableStateOf<String?>(null) }
 
@@ -41,14 +42,7 @@ fun SystemScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Server", style = MaterialTheme.typography.titleLarge) },
-                actions = { com.unifiedserver.dashboard.ui.navigation.SettingsAction() },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Surface,
-                    titleContentColor = OnSurface
-                )
-            )
+            com.unifiedserver.dashboard.ui.navigation.AppTopBar("Server")
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Background
@@ -60,9 +54,9 @@ fun SystemScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            if (uiState.systemInfo == null && uiState.error == null) {
+            if (uiState.overview == null && uiState.error == null) {
                 LoadingScreen()
-            } else if (uiState.error != null && uiState.systemInfo == null) {
+            } else if (uiState.error != null && uiState.overview == null) {
                 ErrorScreen(
                     message = uiState.error ?: "Could not reach server",
                     onRetry = { viewModel.refresh() }
@@ -73,62 +67,66 @@ fun SystemScreen(
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
                     item { RefreshStatus(uiState.error, uiState.lastUpdated) { viewModel.refresh() } }
-                    // CPU Monitoring
+                    val overview = uiState.overview
+                    overview?.let {
+                        unavailableSections(it).takeIf { missing -> missing.isNotEmpty() }?.let { missing ->
+                            item { InlineWarning("Some data is unavailable: ${missing.joinToString()}.") }
+                        }
+                        item { SectionHeader("Resources") }
+                        item { ResourceTiles(it) }
+                    }
+
                     uiState.cpuMetrics?.let { metrics ->
-                        item { SectionHeader("CPU Monitoring") }
+                        item { SectionHeader("CPU", modifier = Modifier.padding(top = 8.dp)) }
                         item {
-                            CpuGraphCard(
-                                currentUsage = metrics.currentUsage,
+                            CpuHistoryCard(
                                 averageUsage = metrics.averageUsage,
                                 maxUsage = metrics.maxUsage,
                                 minUsage = metrics.minUsage,
                                 dataPoints = metrics.dataPoints,
-                                cpuCount = metrics.cpuCount,
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
                     }
 
-                    // System Info
-                    uiState.systemInfo?.let { info ->
-                        item { SectionHeader("System Resources") }
-                        item { FlatSystemInfoSection(info = info) }
-                    }
+                    overview?.let {
+                        val disks = overviewDisks(it)
+                        if (disks.isNotEmpty()) {
+                            item { SectionHeader("Storage", modifier = Modifier.padding(top = 8.dp)) }
+                            items(disks, key = { d -> d.first }) { (label, disk) -> DiskItem(label = label, disk = disk) }
+                        }
+                        systemDiskWarning(it)?.let { warning -> item { InlineWarning(warning) } }
 
-                    // Services
-                    if (uiState.services.isNotEmpty()) {
-                        item { SectionHeader("Services", modifier = Modifier.padding(top = 8.dp)) }
-                        items(uiState.services) { service ->
-                            ServiceItem(service = service)
+                        item { SectionHeader("Downloads & VPN", modifier = Modifier.padding(top = 8.dp)) }
+                        item { DownloadsAndVpnRows(it) }
+
+                        val services = it.services.orEmpty()
+                        if (services.isNotEmpty()) {
+                            item { SectionHeader("Services", modifier = Modifier.padding(top = 8.dp)) }
+                            items(services) { service -> ServiceItem(service = service) }
+                        }
+
+                        val containers = it.containers.orEmpty()
+                        if (containers.isNotEmpty()) {
+                            item { SectionHeader("Containers", modifier = Modifier.padding(top = 8.dp)) }
+                            items(containers) { container -> DockerContainerItem(container = container) }
                         }
                     }
 
-                    // Disks
-                    if (uiState.disks.isNotEmpty()) {
-                        item { SectionHeader("Storage", modifier = Modifier.padding(top = 8.dp)) }
-                        // Prioritize SSD: filter for non-root disk first, then fallback to any non-root disk
-                        val disksToShow = com.unifiedserver.dashboard.ui.utils.orderedDisks(uiState.disks)
-                        
-                        items(disksToShow) { disk ->
-                            DiskItem(disk = disk)
-                        }
-                    }
-
-                    // Docker
-                    if (uiState.dockerContainers.isNotEmpty()) {
-                        item { SectionHeader("Docker Containers", modifier = Modifier.padding(top = 8.dp)) }
-                        items(uiState.dockerContainers) { container ->
-                            DockerContainerItem(container = container)
-                        }
-                    }
-
-                    // Power Controls
                     item {
                         SectionHeader("Power", modifier = Modifier.padding(top = 8.dp))
                         PowerControlsSection(
                             onReboot = { showPowerDialog = "reboot" },
                             onShutdown = { showPowerDialog = "shutdown" }
                         )
+                    }
+
+                    overview?.deploy?.commit?.let { commit ->
+                        item {
+                            Text("Dashboard backend build $commit", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                        }
                     }
 
                     item { Spacer(modifier = Modifier.height(16.dp)) }
@@ -148,60 +146,6 @@ fun SystemScreen(
             onDismiss = { showPowerDialog = null }
         )
     }
-}
-
-@Composable
-fun FlatSystemInfoSection(info: SystemInfo) {
-    Column(
-        modifier = Modifier.padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        if (info.cpu.isNotBlank()) {
-            InfoCard(label = "CPU Usage", value = "${info.cpu}%")
-        }
-        if (info.memory.isNotBlank()) {
-            InfoCard(label = "Memory", value = info.memory)
-        }
-        if (info.disk.isNotBlank()) {
-            InfoCard(label = "Disk (root)", value = info.disk)
-        }
-        if (info.uptime.isNotBlank()) {
-            InfoCard(label = "Uptime", value = info.uptime)
-        }
-    }
-}
-
-@Composable
-fun InfoCard(label: String, value: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Surface),
-        shape = RoundedCornerShape(10.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium,
-                color = OnSurface
-            )
-        }
-    }
-}
-
-@Composable
-fun SystemResourcesSection(info: SystemInfo) {
-    FlatSystemInfoSection(info = info)
 }
 
 @Composable
@@ -226,7 +170,7 @@ fun ServiceItem(service: ServiceStatus) {
                     color = OnSurface
                 )
                 Text(
-                    text = service.status,
+                    text = listOfNotNull(service.status, service.sub).joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -240,7 +184,7 @@ fun ServiceItem(service: ServiceStatus) {
 }
 
 @Composable
-fun DiskItem(disk: DiskDevice) {
+fun DiskItem(label: String, disk: DiskUsage) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -253,29 +197,21 @@ fun DiskItem(disk: DiskDevice) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                Text(text = label, style = MaterialTheme.typography.bodyMedium, color = OnSurface)
                 Text(
                     text = disk.mountPoint,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = OnSurface
-                )
-                Text(
-                    text = disk.device,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            val pct = disk.usedPercent
+            val pct = disk.percent
             LinearProgressIndicator(
                 progress = { (pct / 100f).coerceIn(0f, 1f) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp),
-                color = when {
-                    pct > 90f -> StatusRed
-                    pct > 70f -> StatusYellow
-                    else -> Secondary
-                },
+                color = levelColor(pct),
                 trackColor = SurfaceVariant
             )
             Spacer(modifier = Modifier.height(4.dp))
@@ -284,18 +220,14 @@ fun DiskItem(disk: DiskDevice) {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "${disk.used} used of ${disk.size}",
+                    text = "${formatBytes(disk.available)} free of ${formatBytes(disk.size)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = disk.usePercent,
+                    text = "${pct.roundToInt()}% used",
                     style = MaterialTheme.typography.labelSmall,
-                    color = when {
-                        pct > 90f -> StatusRed
-                        pct > 70f -> StatusYellow
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
+                    color = if (pct > 65f) levelColor(pct) else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -315,7 +247,7 @@ fun DockerContainerItem(container: DockerContainer) {
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            StatusDot(color = if (container.running) StatusGreen else StatusGray)
+            StatusDot(color = healthColor(containerHealth(container)))
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -336,9 +268,9 @@ fun DockerContainerItem(container: DockerContainer) {
                 )
             }
             StatusBadge(
-                text = container.state,
+                text = if (container.running && container.healthy == false) "unhealthy" else container.state,
                 color = when (container.state.lowercase()) {
-                    "running" -> StatusGreen
+                    "running" -> if (container.healthy == false) StatusYellow else StatusGreen
                     "exited", "dead" -> StatusRed
                     "paused" -> StatusYellow
                     else -> StatusGray
@@ -391,7 +323,6 @@ fun PowerConfirmDialog(
     val isReboot = action == "reboot"
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Surface,
         title = {
             Text(
                 if (isReboot) "Reboot Server?" else "Shutdown Server?",

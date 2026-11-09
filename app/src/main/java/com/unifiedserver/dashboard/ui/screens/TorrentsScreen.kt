@@ -1,38 +1,38 @@
 package com.unifiedserver.dashboard.ui.screens
 
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import com.unifiedserver.dashboard.data.repository.DownloadHandoff
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.unifiedserver.dashboard.data.repository.DownloadHandoff
 import com.unifiedserver.dashboard.ui.components.*
+import com.unifiedserver.dashboard.ui.navigation.AppTopBar
 import com.unifiedserver.dashboard.ui.theme.*
-import com.unifiedserver.dashboard.ui.utils.formatSpeed
+import com.unifiedserver.dashboard.ui.utils.formatBytes
 
+/**
+ * Media › Torrents: search qBittorrent's plugins and pick a source, or paste a magnet link.
+ * "Find sources" and "Auto-download" from a title's details land here. Running downloads
+ * are in the downloads bar; finished ones are in Storage.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TorrentsScreen(
@@ -41,667 +41,197 @@ fun TorrentsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val incoming by handoff.pendingQuery.collectAsStateWithLifecycle()
-    RefreshWhileVisible(5_000) { viewModel.loadTorrents(silent = uiState.lastUpdated != null) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    var query by rememberSaveable(uiState.searchQuery) { mutableStateOf(uiState.searchQuery) }
+    var magnet by rememberSaveable { mutableStateOf("") }
 
-    var showAddDialog by rememberSaveable { mutableStateOf(false) }
-    var showSearchSheet by rememberSaveable { mutableStateOf(false) }
-    var showDeleteDialog by rememberSaveable { mutableStateOf<String?>(null) }
-    var showSortMenu by remember { mutableStateOf(false) }
     LaunchedEffect(incoming) {
-        incoming?.let { req ->
-            if (req.autoPick) {
-                // Auto-pick mode: run silently in background, show snackbar with result
-                viewModel.autoPickAndAdd(req.query)
-            } else {
-                // Manual mode: open search sheet so user picks manually
-                showSearchSheet = true
-                viewModel.startSearch(req.query)
-            }
+        incoming?.let { request ->
+            if (request.autoPick) viewModel.autoPickAndAdd(request) else viewModel.startSearch(request.query)
             handoff.consume()
         }
     }
-
-    // Show snackbar messages
     LaunchedEffect(uiState.snackbarMessage) {
-        uiState.snackbarMessage?.let { message ->
-            snackbarHostState.showSnackbar(message)
+        uiState.snackbarMessage?.let {
+            snackbarHostState.showSnackbar(it)
             viewModel.clearSnackbar()
         }
+    }
+    fun search() {
+        if (query.isBlank()) return
+        keyboard?.hide()
+        viewModel.startSearch(query)
     }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Downloads", style = MaterialTheme.typography.titleLarge) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Surface,
-                    titleContentColor = OnSurface
-                ),
-                actions = {
-                    com.unifiedserver.dashboard.ui.navigation.SettingsAction()
-                    IconButton(onClick = { showSortMenu = true }) {
-                        Icon(Icons.Filled.Sort, contentDescription = "Sort", tint = Primary)
-                    }
-                    DropdownMenu(
-                        expanded = showSortMenu,
-                        onDismissRequest = { showSortMenu = false },
-                        modifier = Modifier.background(Surface)
-                    ) {
-                        DropdownMenuItem(text = { Text("Date added") }, onClick = {
-                            viewModel.setTorrentSort(TorrentSortOption.DATE_ADDED)
-                            showSortMenu = false
-                        })
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Name")
-                                    if (uiState.torrentSortOption == TorrentSortOption.NAME) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Icon(
-                                            imageVector = if (uiState.torrentSortOrder == SortOrder.ASCENDING) 
-                                                Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
-                                            contentDescription = null,
-                                            tint = Primary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            },
-                            onClick = {
-                                viewModel.setTorrentSort(TorrentSortOption.NAME)
-                                showSortMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Size")
-                                    if (uiState.torrentSortOption == TorrentSortOption.SIZE) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Icon(
-                                            imageVector = if (uiState.torrentSortOrder == SortOrder.ASCENDING) 
-                                                Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
-                                            contentDescription = null,
-                                            tint = Primary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            },
-                            onClick = {
-                                viewModel.setTorrentSort(TorrentSortOption.SIZE)
-                                showSortMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Seeds")
-                                    if (uiState.torrentSortOption == TorrentSortOption.SEEDS) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Icon(
-                                            imageVector = if (uiState.torrentSortOrder == SortOrder.ASCENDING) 
-                                                Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
-                                            contentDescription = null,
-                                            tint = Primary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            },
-                            onClick = {
-                                viewModel.setTorrentSort(TorrentSortOption.SEEDS)
-                                showSortMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Progress")
-                                    if (uiState.torrentSortOption == TorrentSortOption.PROGRESS) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Icon(
-                                            imageVector = if (uiState.torrentSortOrder == SortOrder.ASCENDING) 
-                                                Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
-                                            contentDescription = null,
-                                            tint = Primary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            },
-                            onClick = {
-                                viewModel.setTorrentSort(TorrentSortOption.PROGRESS)
-                                showSortMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Ratio")
-                                    if (uiState.torrentSortOption == TorrentSortOption.RATIO) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Icon(
-                                            imageVector = if (uiState.torrentSortOrder == SortOrder.ASCENDING) 
-                                                Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
-                                            contentDescription = null,
-                                            tint = Primary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            },
-                            onClick = {
-                                viewModel.setTorrentSort(TorrentSortOption.RATIO)
-                                showSortMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Download Speed")
-                                    if (uiState.torrentSortOption == TorrentSortOption.SPEED_DOWN) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Icon(
-                                            imageVector = if (uiState.torrentSortOrder == SortOrder.ASCENDING) 
-                                                Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
-                                            contentDescription = null,
-                                            tint = Primary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            },
-                            onClick = {
-                                viewModel.setTorrentSort(TorrentSortOption.SPEED_DOWN)
-                                showSortMenu = false
-                            }
-                        )
-                    }
-                }
-            )
-        },
-        floatingActionButton = {
-            Row(
-                modifier = Modifier.padding(end = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Button(
-                    onClick = { showSearchSheet = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.height(56.dp)
-                ) {
-                    Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Search", style = MaterialTheme.typography.labelLarge, color = OnPrimary)
-                }
-                FloatingActionButton(
-                    onClick = { showAddDialog = true },
-                    containerColor = Primary,
-                    contentColor = OnPrimary
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add torrent")
-                }
-            }
+            AppTopBar("Media")
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Background
     ) { innerPadding ->
-        RefreshBox(
-            isRefreshing = uiState.isLoading,
-            onRefresh = { viewModel.refresh() },
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(innerPadding).imePadding(),
+            contentPadding = PaddingValues(bottom = 24.dp)
         ) {
-            when {
-                uiState.error != null && uiState.torrents.isEmpty() -> {
-                    ErrorScreen(
-                        message = uiState.error ?: "Failed to load torrents",
-                        onRetry = { viewModel.refresh() }
+            item {
+                Column(Modifier.padding(16.dp)) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        label = { Text("Search torrents") },
+                        placeholder = { Text("Title, year or SxxEyy") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { search() }),
+                        trailingIcon = {
+                            if (query.isNotBlank()) IconButton(onClick = { query = ""; viewModel.clearSearch() }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                            }
+                        }
                     )
-                }
-                uiState.torrents.isEmpty() && !uiState.isLoading -> {
-                    EmptyTorrentsView()
-                }
-                else -> {
-                    val sortedTorrents = viewModel.getSortedTorrents()
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        item { RefreshStatus(uiState.error, uiState.lastUpdated) { viewModel.refresh() } }
-                        item {
-                            TorrentSummaryRow(
-                                downloadSpeed = uiState.torrents.sumOf { it.dlspeed },
-                                uploadSpeed = uiState.torrents.sumOf { it.upspeed },
-                                count = uiState.torrents.size
-                            )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { search() }, enabled = query.isNotBlank() && !uiState.isSearching) {
+                            Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Search")
                         }
-                        items(
-                            items = sortedTorrents,
-                            key = { it.hash }
-                        ) { torrent ->
-                            TorrentItem(
-                                torrent = torrent,
-                                onPause = { viewModel.pauseTorrent(torrent.hash) },
-                                onResume = { viewModel.resumeTorrent(torrent.hash) },
-                                onDelete = { showDeleteDialog = torrent.hash }
-                            )
-                        }
-                        item { Spacer(modifier = Modifier.height(80.dp)) }
-                    }
-                }
-            }
-        }
-    }
-
-    // Add Torrent Dialog
-    if (showAddDialog) {
-        AddTorrentDialog(
-            onDismiss = { showAddDialog = false },
-            isPending = uiState.isMutating,
-            onAdd = { url -> viewModel.addTorrent(url) { showAddDialog = false } }
-        )
-    }
-
-    // Delete Confirmation
-    showDeleteDialog?.let { hash ->
-        DeleteTorrentDialog(
-            name = uiState.torrents.find { it.hash == hash }?.name ?: "selected download",
-            onDismiss = { showDeleteDialog = null },
-            onDelete = { deleteFiles ->
-                viewModel.deleteTorrent(hash, deleteFiles)
-                showDeleteDialog = null
-            }
-        )
-    }
-
-    // Search Bottom Sheet
-    if (showSearchSheet) {
-        TorrentSearchSheet(
-            uiState = uiState,
-            onSearch = { viewModel.startSearch(it) },
-            onStop = { viewModel.stopSearch() },
-            onClear = { viewModel.clearSearch() },
-            onAddUrl = { url ->
-                viewModel.addTorrent(url) { showSearchSheet = false }
-            },
-            onDismiss = { showSearchSheet = false },
-            viewModel = viewModel
-        )
-    }
-}
-
-@Composable
-fun TorrentSummaryRow(
-    downloadSpeed: Long,
-    uploadSpeed: Long,
-    count: Int
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = "$count torrent(s)",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (downloadSpeed > 0) {
-                Text(
-                    text = "↓ ${formatSpeed(downloadSpeed)}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = StateDownloading
-                )
-            }
-            if (uploadSpeed > 0) {
-                Text(
-                    text = "↑ ${formatSpeed(uploadSpeed)}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = StateUploading
-                )
-            }
-        }
-    }
-    HorizontalDivider(color = Divider)
-}
-
-@Composable
-fun EmptyTorrentsView() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = "No torrents yet",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Add a torrent using the button or search for one",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-fun AddTorrentDialog(
-    onDismiss: () -> Unit,
-    isPending: Boolean = false,
-    onAdd: (String) -> Unit
-) {
-    var url by rememberSaveable { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Surface,
-        title = { Text("Add Torrent", color = OnSurface) },
-        text = {
-            OutlinedTextField(
-                value = url,
-                onValueChange = { url = it },
-                label = { Text("Magnet link or URL") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = false,
-                maxLines = 4,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Primary,
-                    unfocusedBorderColor = Divider,
-                    focusedLabelColor = Primary,
-                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    cursorColor = Primary,
-                    focusedTextColor = OnSurface,
-                    unfocusedTextColor = OnSurface
-                )
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { if (url.isNotBlank()) onAdd(url.trim()) },
-                enabled = url.isNotBlank() && !isPending
-            ) {
-                Text(if (isPending) "Adding…" else "Add download", color = Primary)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    )
-}
-
-@Composable
-fun DeleteTorrentDialog(
-    name: String,
-    onDismiss: () -> Unit,
-    onDelete: (Boolean) -> Unit
-) {
-    var deleteFiles by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Surface,
-        title = { Text("Delete Torrent", color = OnSurface) },
-        text = {
-            Column {
-                Text(
-                    "Remove \"$name\" from Downloads? Files will be kept unless you select the option below.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Checkbox(
-                        checked = deleteFiles,
-                        onCheckedChange = { deleteFiles = it },
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = StatusRed,
-                            uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Also delete files", color = OnSurface)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onDelete(deleteFiles) }) {
-                Text("Delete", color = StatusRed)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun TorrentSearchSheet(
-    uiState: TorrentsUiState,
-    onSearch: (String) -> Unit,
-    onStop: () -> Unit,
-    onClear: () -> Unit,
-    onAddUrl: (String) -> Unit,
-    onDismiss: () -> Unit,
-    viewModel: TorrentsViewModel
-) {
-    var query by rememberSaveable(uiState.searchQuery) { mutableStateOf(uiState.searchQuery) }
-    var showSortMenu by remember { mutableStateOf(false) }
-    val keyboardController = LocalSoftwareKeyboardController.current
-
-    ModalBottomSheet(
-        onDismissRequest = {
-            onDismiss()
-        },
-        containerColor = Surface
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Search Torrents",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = OnSurface,
-                    modifier = Modifier.weight(1f)
-                )
-                if (uiState.searchResults.isNotEmpty()) {
-                    IconButton(onClick = { showSortMenu = true }, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Filled.Sort, contentDescription = "Sort results", tint = Primary, modifier = Modifier.size(20.dp))
-                    }
-                    DropdownMenu(
-                        expanded = showSortMenu,
-                        onDismissRequest = { showSortMenu = false },
-                        modifier = Modifier.background(Surface)
-                    ) {
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Name")
-                                    if (uiState.searchResultsSortOption == TorrentSortOption.NAME) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Icon(Icons.Filled.ArrowDownward, contentDescription = null, tint = Primary, modifier = Modifier.size(14.dp))
-                                    }
-                                }
-                            },
-                            onClick = {
-                                viewModel.setSearchResultsSort(TorrentSortOption.NAME)
-                                showSortMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Size")
-                                    if (uiState.searchResultsSortOption == TorrentSortOption.SIZE) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Icon(Icons.Filled.ArrowDownward, contentDescription = null, tint = Primary, modifier = Modifier.size(14.dp))
-                                    }
-                                }
-                            },
-                            onClick = {
-                                viewModel.setSearchResultsSort(TorrentSortOption.SIZE)
-                                showSortMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Seeders")
-                                    if (uiState.searchResultsSortOption == TorrentSortOption.SEEDS) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Icon(Icons.Filled.ArrowDownward, contentDescription = null, tint = Primary, modifier = Modifier.size(14.dp))
-                                    }
-                                }
-                            },
-                            onClick = {
-                                viewModel.setSearchResultsSort(TorrentSortOption.SEEDS)
-                                showSortMenu = false
-                            }
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                label = { Text("Search query") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = {
-                    if (query.isNotBlank()) {
-                        keyboardController?.hide()
-                        onSearch(query)
-                    }
-                }),
-                trailingIcon = {
-                    if (query.isNotBlank()) {
-                        IconButton(onClick = { query = "" }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (uiState.isSearching) {
+                            OutlinedButton(onClick = { viewModel.stopSearch() }) { Text("Stop", color = StatusRed) }
                         }
                     }
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Primary,
-                    unfocusedBorderColor = Divider,
-                    focusedLabelColor = Primary,
-                    focusedTextColor = OnSurface,
-                    unfocusedTextColor = OnSurface
-                )
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = {
-                        if (query.isNotBlank()) {
-                            keyboardController?.hide()
-                            onSearch(query)
-                        }
-                    },
-                    enabled = query.isNotBlank() && !uiState.isSearching,
-                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                ) {
-                    Icon(Icons.Filled.Search, contentDescription = null)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Search")
-                }
-                if (uiState.isSearching) {
-                    OutlinedButton(onClick = onStop) {
-                        Text("Stop", color = StatusRed)
+                    if (uiState.searchId == null && !uiState.isSearching && uiState.operation == null) {
+                        Text("Searches the server's qBittorrent search plugins. Pick a source to start the download.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
                     }
                 }
-                TextButton(onClick = { query = ""; onClear() }) { Text("Clear") }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            uiState.operation?.let { operation ->
+                item {
+                    AutomaticOperationCard(operation, onCancel = { viewModel.stopSearch() },
+                        onRetry = { viewModel.retryAutomaticDownload() },
+                        onReview = { viewModel.dismissOperation() }, onDismiss = { viewModel.dismissOperation() },
+                        onRefresh = { viewModel.dismissOperation() })
+                }
+            }
 
             if (uiState.isSearching) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        color = Primary,
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Searching... ${uiState.searchStatus}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                item {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Searching… ${uiState.searchTotal} sources so far", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
-                Spacer(modifier = Modifier.height(12.dp))
             }
-
-            if (uiState.searchError != null) {
-                Text(
-                    text = "Error: ${uiState.searchError}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = StatusRed
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+            uiState.searchError?.let {
+                item { Text(it, color = StatusRed, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(16.dp)) }
             }
 
             if (uiState.searchResults.isNotEmpty()) {
-                Text(
-                    text = "${uiState.searchResults.size} of ${uiState.searchTotal} results",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                val sortedResults = viewModel.getSortedSearchResults()
-                LazyColumn(
-                    modifier = Modifier.heightIn(max = 400.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(sortedResults) { result ->
-                        SearchResultItem(
-                            result = result,
-                            enabled = !uiState.isMutating,
-                            onAdd = { onAddUrl(result.fileUrl) }
-                        )
-                    }
-                    if (!uiState.isSearching && uiState.searchOffset < uiState.searchTotal) {
-                        item {
-                            TextButton(onClick = { viewModel.loadMoreResults() }, enabled = !uiState.isLoadingMore) {
-                                Text(if (uiState.isLoadingMore) "Loading…" else "Load more results")
-                            }
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("${uiState.searchResults.size} of ${uiState.searchTotal}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        listOf(TorrentSortOption.SEEDS to "Seeders", TorrentSortOption.SIZE to "Size",
+                            TorrentSortOption.NAME to "Name").forEach { (option, label) ->
+                            FilterChip(selected = uiState.searchResultsSortOption == option,
+                                onClick = { viewModel.setSearchResultsSort(option) }, label = { Text(label) })
                         }
                     }
-                    item { Spacer(modifier = Modifier.height(80.dp)) }
+                }
+                items(viewModel.getSortedSearchResults(), key = { it.fileUrl }) { result ->
+                    Box(Modifier.padding(horizontal = 16.dp, vertical = 3.dp)) {
+                        SearchResultItem(result, enabled = !uiState.isMutating, onAdd = { viewModel.addTorrent(result.fileUrl) })
+                    }
+                }
+                if (!uiState.isSearching && uiState.searchOffset < uiState.searchTotal) {
+                    item {
+                        TextButton(onClick = { viewModel.loadMoreResults() }, enabled = !uiState.isLoadingMore,
+                            modifier = Modifier.padding(horizontal = 8.dp)) {
+                            Text(if (uiState.isLoadingMore) "Loading…" else "Load more results")
+                        }
+                    }
+                }
+            } else if (!uiState.isSearching && uiState.searchId != null && uiState.searchError == null) {
+                item { Text("No sources found. Try a different title or year.", modifier = Modifier.padding(16.dp)) }
+            }
+
+            item {
+                SectionHeader("Add magnet link", modifier = Modifier.padding(top = 16.dp))
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    OutlinedTextField(
+                        value = magnet,
+                        onValueChange = { magnet = it },
+                        label = { Text("Magnet link or torrent URL") },
+                        placeholder = { Text("magnet:?xt=urn:btih:…") },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = { viewModel.addTorrent(magnet.trim()) { magnet = "" } },
+                        enabled = magnet.isNotBlank() && !uiState.isMutating) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (uiState.isMutating) "Adding…" else "Add download")
+                    }
+                    Text("Downloads in order, so playback can start early.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                 }
             }
-            if (!uiState.isSearching && uiState.searchId != null && uiState.searchResults.isEmpty() && uiState.searchError == null) {
-                Text("No sources found. Try a different title or year.", modifier = Modifier.padding(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun AutomaticOperationCard(
+    operation: DownloadOperation,
+    onCancel: () -> Unit,
+    onRetry: () -> Unit,
+    onReview: () -> Unit,
+    onDismiss: () -> Unit,
+    onRefresh: () -> Unit
+) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Text(operation.request.query, style = MaterialTheme.typography.titleSmall,
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(operation.message, style = MaterialTheme.typography.bodyMedium)
+            operation.source?.let {
+                Text(it.fileName, style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text("${it.nbSeeders} seeders · ${formatBytes(it.fileSize)}",
+                    style = MaterialTheme.typography.labelMedium)
+            }
+            if (operation.stage in listOf(DownloadStage.SEARCHING, DownloadStage.SELECTING, DownloadStage.ADDING)) {
+                LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
+            }
+            Row {
+                when (operation.stage) {
+                    DownloadStage.SEARCHING, DownloadStage.SELECTING -> TextButton(onClick = onCancel) { Text("Cancel") }
+                    DownloadStage.FAILED, DownloadStage.CANCELLED -> {
+                        if (operation.canRetry) TextButton(onClick = onRetry) { Text("Retry") }
+                        else TextButton(onClick = onRefresh) { Text("OK") }
+                        if (operation.canRetry) TextButton(onClick = onReview) { Text("Choose manually") }
+                    }
+                    else -> Unit
+                }
+            }
+            if (operation.stage in listOf(DownloadStage.SUCCEEDED, DownloadStage.FAILED, DownloadStage.CANCELLED)) {
+                TextButton(onClick = onDismiss) { Text("Dismiss") }
             }
         }
     }
@@ -730,6 +260,14 @@ fun SearchResultItem(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (com.unifiedserver.dashboard.data.repository.isSuspiciousSourceName(result.fileName)) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "⚠ Looks like malware (executable or password-protected archive). Don't download.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = StatusRed
+                    )
+                }
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (result.fileSize > 0) {

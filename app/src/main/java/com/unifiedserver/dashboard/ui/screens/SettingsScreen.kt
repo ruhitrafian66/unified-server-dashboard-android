@@ -30,16 +30,17 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { viewModel.refreshConfiguration() }
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Local editable state
     var serverUrl by rememberSaveable(uiState.serverUrl) { mutableStateOf(uiState.serverUrl) }
-    var tmdbApiKey by remember(uiState.tmdbApiKey) { mutableStateOf(uiState.tmdbApiKey) }
+    var tmdbApiKey by remember { mutableStateOf("") }
     var omdbApiKey by remember(uiState.omdbApiKey) { mutableStateOf(uiState.omdbApiKey) }
     var tmdbKeyVisible by remember { mutableStateOf(false) }
     var autoStopEnabled by rememberSaveable(uiState.autoStopEnabled) { mutableStateOf(uiState.autoStopEnabled) }
-    var seedingTime by rememberSaveable(uiState.autoStopDelayMinutes) { mutableStateOf(uiState.autoStopDelayMinutes.toString()) }
-    var ratioLimit by rememberSaveable(uiState.autoStopRatio) { mutableStateOf("%.2f".format(uiState.autoStopRatio)) }
+    var seedingTime by rememberSaveable(uiState.autoStopMinutes) { mutableStateOf(uiState.autoStopMinutes?.toString() ?: "") }
+    var ratioLimit by rememberSaveable(uiState.autoStopRatio) { mutableStateOf(formatRatio(uiState.autoStopRatio)) }
     var autoCheckEnabled by rememberSaveable(uiState.autoCheckEnabled) { mutableStateOf(uiState.autoCheckEnabled) }
 
     LaunchedEffect(uiState.snackbarMessage) {
@@ -51,14 +52,7 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Settings", style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = { com.unifiedserver.dashboard.ui.navigation.BackAction() },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Surface,
-                    titleContentColor = OnSurface
-                )
-            )
+            com.unifiedserver.dashboard.ui.navigation.AppTopBar("Settings", showBack = true, showSettings = false)
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Background
@@ -74,6 +68,9 @@ fun SettingsScreen(
             if (uiState.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
             uiState.configurationError?.let {
                 Text(it, color = StatusYellow, modifier = Modifier.padding(16.dp))
+                TextButton(onClick = { viewModel.refreshConfiguration() }, enabled = !uiState.isLoading) {
+                    Text("Retry loading settings")
+                }
             }
             // Server URL
             SectionHeader("Server")
@@ -98,8 +95,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(
                         onClick = { viewModel.updateServerUrl(serverUrl.trim()) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                        modifier = Modifier.fillMaxWidth(),
+                                                modifier = Modifier.fillMaxWidth(),
                         enabled = !uiState.isSaving && serverUrl.isNotBlank()
                     ) {
                         Text(if (uiState.savingSection == "server") "Testing connection…" else "Test and save server")
@@ -110,7 +106,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             // TMDB API Key
-            SectionHeader("TMDB Integration")
+            SectionHeader("TMDB (movie & TV data)")
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -119,8 +115,15 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    when (uiState.tmdbConfigured) {
+                        true -> Text("✓ Configured on the server — works on every device.",
+                            style = MaterialTheme.typography.bodySmall, color = StatusGreen)
+                        false -> Text("Not configured — Media and TV tracking need it.",
+                            style = MaterialTheme.typography.bodySmall, color = StatusYellow)
+                        null -> {}
+                    }
                     Text(
-                        text = "Used for Movies, TV discovery, and tracked shows. Saved to both this device and your server.",
+                        text = "Stored only on your server, which makes all TMDB requests. Enter a key to replace it.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -128,7 +131,8 @@ fun SettingsScreen(
                     OutlinedTextField(
                         value = tmdbApiKey,
                         onValueChange = { tmdbApiKey = it },
-                        label = { Text("TMDB API Key") },
+                        label = { Text("TMDB API key (v3)") },
+                        placeholder = { Text(if (uiState.tmdbConfigured == true) "•••••••• (saved)" else "Your TMDB v3 API key") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         visualTransformation = if (tmdbKeyVisible)
@@ -148,20 +152,11 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(
-                        onClick = { viewModel.saveTmdbApiKey(tmdbApiKey.trim()) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isSaving
+                        onClick = { viewModel.saveTmdbApiKey(tmdbApiKey.trim()) { tmdbApiKey = "" } },
+                                                modifier = Modifier.fillMaxWidth(),
+                        enabled = !uiState.isSaving && tmdbApiKey.isNotBlank()
                     ) {
-                        if (uiState.isSaving) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = OnPrimary,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text("Save TMDB Key")
-                        }
+                        Text(if (uiState.savingSection == "tmdb") "Verifying…" else "Verify and save")
                     }
                 }
             }
@@ -169,7 +164,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             // Auto-Stop Seeding
-            SectionHeader("Auto-Stop Seeding")
+            SectionHeader("Seeding limits")
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -185,24 +180,20 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Enable Auto-Stop",
+                                text = "Stop seeding automatically",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = OnSurface
                             )
                             Text(
-                                text = "Automatically stop seeding based on limits",
+                                text = "Saved in qBittorrent, so it applies even when this app is closed",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Switch(
                             checked = autoStopEnabled,
-                            enabled = !uiState.isLoading && !uiState.isSaving && uiState.configurationError == null,
-                            onCheckedChange = { autoStopEnabled = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Primary,
-                                checkedTrackColor = PrimaryVariant
-                            )
+                            enabled = !uiState.isLoading && !uiState.isSaving && uiState.autoStopReady,
+                            onCheckedChange = { autoStopEnabled = it }
                         )
                     }
 
@@ -214,7 +205,8 @@ fun SettingsScreen(
                         OutlinedTextField(
                             value = seedingTime,
                             onValueChange = { seedingTime = it.filter { c -> c.isDigit() } },
-                            label = { Text("Stop Delay After Completion (minutes, 0 = immediate)") },
+                            label = { Text("Seed for (minutes)") },
+                            placeholder = { Text("Empty = no time limit") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -224,7 +216,9 @@ fun SettingsScreen(
                         OutlinedTextField(
                             value = ratioLimit,
                             onValueChange = { ratioLimit = it },
-                            label = { Text("Ratio Limit") },
+                            label = { Text("Or until ratio") },
+                            placeholder = { Text("e.g. 1.0") },
+                            supportingText = { Text("Leave both empty to stop as soon as a download completes.") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -237,15 +231,14 @@ fun SettingsScreen(
                         onClick = {
                             viewModel.saveAutoStopConfig(
                                 enabled = autoStopEnabled,
-                                delayText = seedingTime,
+                                minutesText = seedingTime,
                                 ratioText = ratioLimit
                             )
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isLoading && !uiState.isSaving && uiState.configurationError == null
+                                                modifier = Modifier.fillMaxWidth(),
+                        enabled = !uiState.isLoading && !uiState.isSaving && uiState.autoStopReady
                     ) {
-                        Text(if (uiState.savingSection == "autoStop") "Saving…" else "Save Auto-Stop Config")
+                        Text(if (uiState.savingSection == "autoStop") "Saving…" else "Save seeding limits")
                     }
                 }
             }
@@ -281,20 +274,15 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = autoCheckEnabled,
-                            enabled = !uiState.isLoading && !uiState.isSaving && uiState.configurationError == null,
-                            onCheckedChange = { autoCheckEnabled = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Primary,
-                                checkedTrackColor = PrimaryVariant
-                            )
+                            enabled = !uiState.isLoading && !uiState.isSaving && uiState.autoCheckReady,
+                            onCheckedChange = { autoCheckEnabled = it }
                         )
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(
                         onClick = { viewModel.saveAutoCheckEnabled(autoCheckEnabled) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isLoading && !uiState.isSaving && uiState.configurationError == null
+                                                modifier = Modifier.fillMaxWidth(),
+                        enabled = !uiState.isLoading && !uiState.isSaving && uiState.autoCheckReady
                     ) {
                         Text(if (uiState.savingSection == "autoCheck") "Saving…" else "Save Auto-Check")
                     }
@@ -303,34 +291,45 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // About
-            SectionHeader("Optional IMDb ratings")
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                OutlinedTextField(value = omdbApiKey, onValueChange = { omdbApiKey = it },
-                    label = { Text("OMDb API key (optional)") }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(), colors = settingsTextFieldColors())
-                Button(onClick = { viewModel.saveOmdbApiKey(omdbApiKey) }, enabled = !uiState.isSaving) {
-                    Text("Save optional key")
-                }
-            }
-            SectionHeader("About")
+            SectionHeader("IMDb ratings (optional)")
             Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 colors = CardDefaults.cardColors(containerColor = Surface),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    SettingsInfoRow(label = "App Version", value = com.unifiedserver.dashboard.BuildConfig.VERSION_NAME)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    SettingsInfoRow(label = "Connection", value = "Configured server")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    SettingsInfoRow(
-                        label = "Connected To",
-                        value = uiState.serverUrl.ifBlank { "Not configured" }
+                    Text(
+                        text = "A personal OMDb key adds IMDb ratings to movie and TV details. Stored on this device only.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = omdbApiKey, onValueChange = { omdbApiKey = it },
+                        label = { Text("OMDb API key") }, singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(), colors = settingsTextFieldColors()
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = { viewModel.saveOmdbApiKey(omdbApiKey) },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !uiState.isSaving && omdbApiKey != uiState.omdbApiKey
+                    ) {
+                        Text(if (uiState.savingSection == "omdb") "Saving…" else "Save OMDb key")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            SectionHeader("About")
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = Surface),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    SettingsInfoRow(label = "App version", value = com.unifiedserver.dashboard.BuildConfig.VERSION_NAME)
                 }
             }
         }
