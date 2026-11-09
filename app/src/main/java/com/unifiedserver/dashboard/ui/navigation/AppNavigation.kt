@@ -17,6 +17,7 @@ import com.unifiedserver.dashboard.data.repository.DownloadHandoff
 import com.unifiedserver.dashboard.ui.components.DownloadsBar
 import com.unifiedserver.dashboard.ui.screens.*
 import com.unifiedserver.dashboard.ui.theme.Background
+import com.unifiedserver.dashboard.ui.theme.OnSurface
 import com.unifiedserver.dashboard.ui.theme.Surface
 
 private data class Destination(val route: String, val title: String, val icon: ImageVector)
@@ -32,6 +33,32 @@ private val mediaTabLabels = listOf("Movies", "TV", "Tracked", "Torrents")
 val LocalOpenSettings = staticCompositionLocalOf<() -> Unit> { {} }
 val LocalOpenStorage = staticCompositionLocalOf<() -> Unit> { {} }
 val LocalNavigateBack = staticCompositionLocalOf<() -> Unit> { {} }
+
+/** The Media tab row; provided only on Media routes and drawn by [AppTopBar] under the title. */
+val LocalMediaTabs = compositionLocalOf<(@Composable () -> Unit)?> { null }
+
+/** The one title bar every screen uses: screen actions first, Settings last. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppTopBar(
+    title: String,
+    showBack: Boolean = false,
+    showSettings: Boolean = true,
+    actions: @Composable RowScope.() -> Unit = {}
+) {
+    Column {
+        TopAppBar(
+            title = { Text(title, style = MaterialTheme.typography.titleLarge) },
+            navigationIcon = { if (showBack) BackAction() },
+            actions = {
+                actions()
+                if (showSettings) SettingsAction()
+            },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = Surface, titleContentColor = OnSurface)
+        )
+        LocalMediaTabs.current?.invoke()
+    }
+}
 
 @Composable
 fun SettingsAction() {
@@ -73,7 +100,18 @@ fun AppNavigation(isSetupComplete: Boolean, preferences: PreferencesManager, han
         CompositionLocalProvider(
             LocalOpenSettings provides { navController.navigate("settings") { launchSingleTop = true } },
             LocalOpenStorage provides { navigateTop("storage") },
-            LocalNavigateBack provides { navController.popBackStack() }
+            LocalNavigateBack provides { navController.popBackStack() },
+            LocalMediaTabs provides if (route in mediaRoutes) {
+                {
+                    TabRow(selectedTabIndex = mediaRoutes.indexOf(route), containerColor = Surface) {
+                        mediaTabLabels.forEachIndexed { index, label ->
+                            Tab(selected = route == mediaRoutes[index], text = { Text(label) },
+                                onClick = { navigateTop(mediaRoutes[index]) },
+                                unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            } else null
         ) {
             Scaffold(
                 containerColor = Background,
@@ -95,14 +133,6 @@ fun AppNavigation(isSetupComplete: Boolean, preferences: PreferencesManager, han
                 }
             ) { padding ->
                 Column(Modifier.padding(padding).consumeWindowInsets(padding)) {
-                    if (route in mediaRoutes) {
-                        TabRow(selectedTabIndex = mediaRoutes.indexOf(route), containerColor = Surface) {
-                            mediaTabLabels.forEachIndexed { index, label ->
-                                Tab(selected = route == mediaRoutes[index], text = { Text(label) },
-                                    onClick = { navigateTop(mediaRoutes[index]) })
-                            }
-                        }
-                    }
                     NavHost(navController, if (isSetupComplete) "dashboard" else "setup", Modifier.weight(1f)) {
                         composable("setup") {
                             SetupScreen(onConfigured = {

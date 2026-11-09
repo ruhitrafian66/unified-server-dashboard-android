@@ -191,7 +191,6 @@ private fun DownloadsSheet(viewModel: DownloadsBarViewModel, onDismiss: () -> Un
         var deleteFiles by remember { mutableStateOf(true) }
         AlertDialog(
             onDismissRequest = { confirmRemove = null },
-            containerColor = Surface,
             title = { Text("Remove download?") },
             text = {
                 Column {

@@ -30,14 +30,7 @@ fun DashboardScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Home", style = MaterialTheme.typography.titleLarge) },
-                actions = { com.unifiedserver.dashboard.ui.navigation.SettingsAction() },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Surface,
-                    titleContentColor = OnSurface
-                )
-            )
+            com.unifiedserver.dashboard.ui.navigation.AppTopBar("Home")
         },
         containerColor = Background
     ) { innerPadding ->
@@ -60,14 +53,15 @@ fun DashboardScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
-                    item { RefreshStatus(uiState.error, uiState.lastUpdated) { viewModel.refresh() } }
-                    // Health status banner
                     item {
                         HealthBanner(
                             isOnline = if (uiState.error?.contains("Connection") == true) null else uiState.health?.status == "ok",
+                            lastUpdated = uiState.lastUpdated,
                             modifier = Modifier.padding(16.dp)
                         )
                     }
+                    // Errors only: the banner already shows when data was last refreshed.
+                    item { RefreshStatus(uiState.error, lastUpdated = null) { viewModel.refresh() } }
 
                     uiState.overview?.let { overview ->
                         unavailableSections(overview).takeIf { it.isNotEmpty() }?.let { missing ->
@@ -100,6 +94,7 @@ fun DashboardScreen(
 @Composable
 fun HealthBanner(
     isOnline: Boolean?,
+    lastUpdated: Long? = null,
     modifier: Modifier = Modifier
 ) {
     val color = when (isOnline) { true -> StatusGreen; false -> StatusRed; null -> StatusYellow }
@@ -125,8 +120,16 @@ fun HealthBanner(
             Text(
                 text = text,
                 style = MaterialTheme.typography.titleSmall,
-                color = color
+                color = color,
+                modifier = Modifier.weight(1f)
             )
+            lastUpdated?.let {
+                Text(
+                    text = "Updated ${java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(it))}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

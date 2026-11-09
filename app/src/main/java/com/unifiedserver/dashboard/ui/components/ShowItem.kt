@@ -18,6 +18,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.unifiedserver.dashboard.data.models.Show
+import com.unifiedserver.dashboard.data.models.episodeCode
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import com.unifiedserver.dashboard.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,6 +73,10 @@ fun ShowItem(
     }
 }
 
+private fun airDate(value: String): String = runCatching {
+    LocalDate.parse(value).format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
+}.getOrDefault(value)
+
 @Composable
 fun ShowCard(
     show: Show,
@@ -76,96 +84,64 @@ fun ShowCard(
     onDownloadSeason: () -> Unit
 ) {
     val isActive = show.status.equals("active", ignoreCase = true)
-    val statusColor = if (isActive) StatusGreen else StatusGray
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Surface),
-        shape = RoundedCornerShape(0.dp)
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Row(
-                verticalAlignment = Alignment.Top,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        StatusDot(color = statusColor)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = show.name,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = OnSurface,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
+    Column(Modifier.fillMaxWidth().background(Background)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = com.unifiedserver.dashboard.data.models.episodeCode(show.currentSeason, show.currentEpisode),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Primary
+                        text = show.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (isActive) OnSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (!show.nextEpisodeAirDate.isNullOrBlank()) {
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Next: ${show.nextEpisodeAirDate}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    if (!isActive) {
+                        Spacer(Modifier.width(8.dp))
+                        StatusBadge(text = "Paused", color = StatusGray)
                     }
-                    show.pendingEpisode?.let { pending ->
-                        Spacer(modifier = Modifier.height(4.dp))
-                        StatusBadge(text = "⏳ ${pending.code} aired, waiting for a release", color = StatusYellow)
-                    }
-                    show.missedEpisodes?.takeIf { it.isNotEmpty() }?.let { missed ->
-                        Spacer(modifier = Modifier.height(4.dp))
-                        StatusBadge(
-                            text = "⚠ Missed ${missed.joinToString { it.code }} — search manually",
-                            color = StatusRed
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
+                }
+                Spacer(Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(episodeCode(show.currentSeason, show.currentEpisode),
+                        style = MaterialTheme.typography.labelMedium, color = Primary)
                     Text(
-                        text = "${show.downloadedEpisodes.size} episode(s) downloaded",
+                        listOfNotNull(
+                            show.nextEpisodeAirDate?.takeIf { it.isNotBlank() }?.let { "next ${airDate(it)}" },
+                            "${show.downloadedEpisodes.size} downloaded"
+                        ).joinToString(" · ", prefix = " · "),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                 }
-
-                Column(horizontalAlignment = Alignment.End) {
-                    IconButton(
-                        onClick = onToggleStatus,
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isActive) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = if (isActive) "Pause tracking ${show.name}" else "Resume tracking ${show.name}",
-                            tint = if (isActive) StatusYellow else StatusGreen,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    IconButton(
-                        onClick = onDownloadSeason,
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Download,
-                            contentDescription = "Download season ${show.currentSeason} of ${show.name}",
-                            tint = Primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                show.pendingEpisode?.let { pending ->
+                    Spacer(Modifier.height(6.dp))
+                    StatusBadge(text = "${pending.code} aired · waiting for a release", color = StatusYellow)
+                }
+                show.missedEpisodes?.takeIf { it.isNotEmpty() }?.let { missed ->
+                    Spacer(Modifier.height(6.dp))
+                    StatusBadge(text = "Missed ${missed.joinToString { it.code }} · search manually", color = StatusRed)
                 }
             }
-
-            Spacer(modifier = Modifier.height(6.dp))
-            StatusBadge(
-                text = if (isActive) "Active" else "Paused",
-                color = statusColor
-            )
+            IconButton(onClick = onToggleStatus) {
+                Icon(
+                    imageVector = if (isActive) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (isActive) "Pause tracking ${show.name}" else "Resume tracking ${show.name}",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onDownloadSeason) {
+                Icon(
+                    imageVector = Icons.Filled.Download,
+                    contentDescription = "Download season ${show.currentSeason} of ${show.name}",
+                    tint = Primary
+                )
+            }
         }
-        HorizontalDivider(color = Divider, thickness = 0.5.dp)
+        HorizontalDivider(color = Divider, modifier = Modifier.padding(start = 16.dp))
     }
 }

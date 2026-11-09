@@ -42,14 +42,7 @@ fun SystemScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Server", style = MaterialTheme.typography.titleLarge) },
-                actions = { com.unifiedserver.dashboard.ui.navigation.SettingsAction() },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Surface,
-                    titleContentColor = OnSurface
-                )
-            )
+            com.unifiedserver.dashboard.ui.navigation.AppTopBar("Server")
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Background
@@ -74,66 +67,66 @@ fun SystemScreen(
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
                     item { RefreshStatus(uiState.error, uiState.lastUpdated) { viewModel.refresh() } }
-                    // CPU Monitoring
+                    val overview = uiState.overview
+                    overview?.let {
+                        unavailableSections(it).takeIf { missing -> missing.isNotEmpty() }?.let { missing ->
+                            item { InlineWarning("Some data is unavailable: ${missing.joinToString()}.") }
+                        }
+                        item { SectionHeader("Resources") }
+                        item { ResourceTiles(it) }
+                    }
+
                     uiState.cpuMetrics?.let { metrics ->
-                        item { SectionHeader("CPU Monitoring") }
+                        item { SectionHeader("CPU", modifier = Modifier.padding(top = 8.dp)) }
                         item {
-                            CpuGraphCard(
-                                currentUsage = metrics.currentUsage,
+                            CpuHistoryCard(
                                 averageUsage = metrics.averageUsage,
                                 maxUsage = metrics.maxUsage,
                                 minUsage = metrics.minUsage,
                                 dataPoints = metrics.dataPoints,
-                                cpuCount = metrics.cpuCount,
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                         }
                     }
 
-                    uiState.overview?.let { overview ->
-                        unavailableSections(overview).takeIf { it.isNotEmpty() }?.let { missing ->
-                            item { InlineWarning("Some data is unavailable: ${missing.joinToString()}.") }
-                        }
-                        item { SectionHeader("System Resources", modifier = Modifier.padding(top = 8.dp)) }
-                        item { ResourceTiles(overview) }
-                        overview.deploy?.commit?.let { commit ->
-                            item {
-                                Text("Dashboard build $commit", style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                            }
-                        }
-
-                        val disks = overviewDisks(overview)
+                    overview?.let {
+                        val disks = overviewDisks(it)
                         if (disks.isNotEmpty()) {
                             item { SectionHeader("Storage", modifier = Modifier.padding(top = 8.dp)) }
-                            items(disks, key = { it.first }) { (label, disk) -> DiskItem(label = label, disk = disk) }
+                            items(disks, key = { d -> d.first }) { (label, disk) -> DiskItem(label = label, disk = disk) }
                         }
-                        systemDiskWarning(overview)?.let { item { InlineWarning(it) } }
+                        systemDiskWarning(it)?.let { warning -> item { InlineWarning(warning) } }
 
                         item { SectionHeader("Downloads & VPN", modifier = Modifier.padding(top = 8.dp)) }
-                        item { DownloadsAndVpnRows(overview) }
+                        item { DownloadsAndVpnRows(it) }
 
-                        val services = overview.services.orEmpty()
+                        val services = it.services.orEmpty()
                         if (services.isNotEmpty()) {
                             item { SectionHeader("Services", modifier = Modifier.padding(top = 8.dp)) }
                             items(services) { service -> ServiceItem(service = service) }
                         }
 
-                        val containers = overview.containers.orEmpty()
+                        val containers = it.containers.orEmpty()
                         if (containers.isNotEmpty()) {
-                            item { SectionHeader("Docker Containers", modifier = Modifier.padding(top = 8.dp)) }
+                            item { SectionHeader("Containers", modifier = Modifier.padding(top = 8.dp)) }
                             items(containers) { container -> DockerContainerItem(container = container) }
                         }
                     }
 
-                    // Power Controls
                     item {
                         SectionHeader("Power", modifier = Modifier.padding(top = 8.dp))
                         PowerControlsSection(
                             onReboot = { showPowerDialog = "reboot" },
                             onShutdown = { showPowerDialog = "shutdown" }
                         )
+                    }
+
+                    overview?.deploy?.commit?.let { commit ->
+                        item {
+                            Text("Dashboard backend build $commit", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                        }
                     }
 
                     item { Spacer(modifier = Modifier.height(16.dp)) }
@@ -330,7 +323,6 @@ fun PowerConfirmDialog(
     val isReboot = action == "reboot"
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Surface,
         title = {
             Text(
                 if (isReboot) "Reboot Server?" else "Shutdown Server?",

@@ -31,7 +31,7 @@ import coil.compose.SubcomposeAsyncImage
 import com.unifiedserver.dashboard.data.models.LibraryItem
 import com.unifiedserver.dashboard.data.models.LibraryResponse
 import com.unifiedserver.dashboard.ui.components.*
-import com.unifiedserver.dashboard.ui.navigation.SettingsAction
+import com.unifiedserver.dashboard.ui.navigation.AppTopBar
 import com.unifiedserver.dashboard.ui.theme.*
 import com.unifiedserver.dashboard.ui.utils.*
 import java.text.DateFormat
@@ -57,16 +57,11 @@ fun StorageScreen(viewModel: StorageViewModel = hiltViewModel()) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Storage", style = MaterialTheme.typography.titleLarge) },
-                actions = {
-                    IconButton(onClick = { viewModel.load(rescan = true) }, enabled = !state.isRescanning) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Rescan library")
-                    }
-                    SettingsAction()
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Surface, titleContentColor = OnSurface)
-            )
+            AppTopBar("Storage") {
+                IconButton(onClick = { viewModel.load(rescan = true) }, enabled = !state.isRescanning) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Rescan library")
+                }
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Background
@@ -120,7 +115,6 @@ fun StorageScreen(viewModel: StorageViewModel = hiltViewModel()) {
         val junk = state.library?.junk
         AlertDialog(
             onDismissRequest = { confirmCleanup = false },
-            containerColor = Surface,
             title = { Text("Clean up junk files?") },
             text = {
                 val examples = junk?.items.orEmpty().take(4).joinToString { it.name.substringAfterLast('/') }
@@ -440,7 +434,6 @@ private fun LibraryItemSheet(
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            containerColor = Surface,
             title = { Text("Delete ${item.displayTitle}?") },
             text = {
                 Text("This permanently deletes ${formatBytes(item.size)} from the server" +

@@ -24,7 +24,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.unifiedserver.dashboard.data.repository.DownloadHandoff
 import com.unifiedserver.dashboard.ui.components.*
-import com.unifiedserver.dashboard.ui.navigation.SettingsAction
+import com.unifiedserver.dashboard.ui.navigation.AppTopBar
 import com.unifiedserver.dashboard.ui.theme.*
 import com.unifiedserver.dashboard.ui.utils.formatBytes
 
@@ -66,11 +66,7 @@ fun TorrentsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Torrents", style = MaterialTheme.typography.titleLarge) },
-                actions = { SettingsAction() },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Surface, titleContentColor = OnSurface)
-            )
+            AppTopBar("Media")
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Background
@@ -106,6 +102,11 @@ fun TorrentsScreen(
                         if (uiState.isSearching) {
                             OutlinedButton(onClick = { viewModel.stopSearch() }) { Text("Stop", color = StatusRed) }
                         }
+                    }
+                    if (uiState.searchId == null && !uiState.isSearching && uiState.operation == null) {
+                        Text("Searches the server's qBittorrent search plugins. Pick a source to start the download.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
                     }
                 }
             }

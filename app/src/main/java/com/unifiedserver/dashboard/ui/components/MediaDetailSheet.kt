@@ -411,7 +411,6 @@ fun SeasonPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Surface,
         title = {
             Text(
                 text = "Select Season",

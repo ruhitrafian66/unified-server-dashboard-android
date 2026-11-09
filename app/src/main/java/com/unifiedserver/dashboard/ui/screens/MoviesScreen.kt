@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.unifiedserver.dashboard.ui.components.*
-import com.unifiedserver.dashboard.ui.navigation.SettingsAction
+import com.unifiedserver.dashboard.ui.navigation.AppTopBar
 import com.unifiedserver.dashboard.ui.theme.Background
 import com.unifiedserver.dashboard.ui.theme.Surface
 
@@ -33,7 +33,7 @@ fun MoviesScreen(viewModel: MediaViewModel = hiltViewModel()) = MediaBrowseScree
 fun MediaBrowseScreen(type: String, viewModel: MediaViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var searching by rememberSaveable { mutableStateOf(false) }
-    val title = if (type == "tv") "TV discovery" else "Movies"
+    val title = if (type == "tv") "TV shows" else "movies"
     val trending = if (type == "tv") state.trendingTv else state.trendingMovies
     // Refreshing would reset "Load more" paging, so only auto-refresh the first page.
     if (!searching && (type == "tv" || state.moviesPage <= 1)) RefreshWhileVisible(60_000) { viewModel.loadTrending() }
@@ -44,17 +44,15 @@ fun MediaBrowseScreen(type: String, viewModel: MediaViewModel) {
     Scaffold(
         containerColor = Background,
         topBar = {
-            TopAppBar(title = { Text(title) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Surface),
-                actions = {
-                    IconButton(onClick = {
-                        searching = !searching
-                        if (!searching) viewModel.clearSearch()
-                    }) {
-                        Icon(if (searching) Icons.Default.Close else Icons.Default.Search,
-                            contentDescription = if (searching) "Close search" else "Search $title")
-                    }
-                    SettingsAction()
-                })
+            AppTopBar("Media") {
+                IconButton(onClick = {
+                    searching = !searching
+                    if (!searching) viewModel.clearSearch()
+                }) {
+                    Icon(if (searching) Icons.Default.Close else Icons.Default.Search,
+                        contentDescription = if (searching) "Close search" else "Search $title")
+                }
+            }
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
@@ -97,12 +95,9 @@ fun MediaBrowseScreen(type: String, viewModel: MediaViewModel) {
                     }
                 }
             } else {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (type == "tv") "Trending this week" else "New on streaming",
-                        style = MaterialTheme.typography.titleSmall)
-                    TextButton(onClick = { viewModel.loadTrending() }, enabled = !state.isLoadingTrending) { Text("Refresh") }
-                }
+                // Refreshes automatically while visible.
+                SectionHeader(if (type == "tv") "Trending this week" else "New on streaming",
+                    modifier = Modifier.padding(top = 8.dp))
                 state.trendingError?.let {
                     Text(it, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error)
                 }

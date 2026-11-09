@@ -52,14 +52,7 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Settings", style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = { com.unifiedserver.dashboard.ui.navigation.BackAction() },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Surface,
-                    titleContentColor = OnSurface
-                )
-            )
+            com.unifiedserver.dashboard.ui.navigation.AppTopBar("Settings", showBack = true, showSettings = false)
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Background
@@ -102,8 +95,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(
                         onClick = { viewModel.updateServerUrl(serverUrl.trim()) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                        modifier = Modifier.fillMaxWidth(),
+                                                modifier = Modifier.fillMaxWidth(),
                         enabled = !uiState.isSaving && serverUrl.isNotBlank()
                     ) {
                         Text(if (uiState.savingSection == "server") "Testing connection…" else "Test and save server")
@@ -161,8 +153,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(
                         onClick = { viewModel.saveTmdbApiKey(tmdbApiKey.trim()) { tmdbApiKey = "" } },
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                        modifier = Modifier.fillMaxWidth(),
+                                                modifier = Modifier.fillMaxWidth(),
                         enabled = !uiState.isSaving && tmdbApiKey.isNotBlank()
                     ) {
                         Text(if (uiState.savingSection == "tmdb") "Verifying…" else "Verify and save")
@@ -202,11 +193,7 @@ fun SettingsScreen(
                         Switch(
                             checked = autoStopEnabled,
                             enabled = !uiState.isLoading && !uiState.isSaving && uiState.autoStopReady,
-                            onCheckedChange = { autoStopEnabled = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Primary,
-                                checkedTrackColor = PrimaryVariant
-                            )
+                            onCheckedChange = { autoStopEnabled = it }
                         )
                     }
 
@@ -248,8 +235,7 @@ fun SettingsScreen(
                                 ratioText = ratioLimit
                             )
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                        modifier = Modifier.fillMaxWidth(),
+                                                modifier = Modifier.fillMaxWidth(),
                         enabled = !uiState.isLoading && !uiState.isSaving && uiState.autoStopReady
                     ) {
                         Text(if (uiState.savingSection == "autoStop") "Saving…" else "Save seeding limits")
@@ -289,18 +275,13 @@ fun SettingsScreen(
                         Switch(
                             checked = autoCheckEnabled,
                             enabled = !uiState.isLoading && !uiState.isSaving && uiState.autoCheckReady,
-                            onCheckedChange = { autoCheckEnabled = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Primary,
-                                checkedTrackColor = PrimaryVariant
-                            )
+                            onCheckedChange = { autoCheckEnabled = it }
                         )
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(
                         onClick = { viewModel.saveAutoCheckEnabled(autoCheckEnabled) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                        modifier = Modifier.fillMaxWidth(),
+                                                modifier = Modifier.fillMaxWidth(),
                         enabled = !uiState.isLoading && !uiState.isSaving && uiState.autoCheckReady
                     ) {
                         Text(if (uiState.savingSection == "autoCheck") "Saving…" else "Save Auto-Check")
@@ -310,34 +291,45 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // About
-            SectionHeader("Optional IMDb ratings")
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                OutlinedTextField(value = omdbApiKey, onValueChange = { omdbApiKey = it },
-                    label = { Text("OMDb API key (optional)") }, singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth(), colors = settingsTextFieldColors())
-                Button(onClick = { viewModel.saveOmdbApiKey(omdbApiKey) }, enabled = !uiState.isSaving) {
-                    Text("Save optional key")
-                }
-            }
-            SectionHeader("About")
+            SectionHeader("IMDb ratings (optional)")
             Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 colors = CardDefaults.cardColors(containerColor = Surface),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    SettingsInfoRow(label = "App Version", value = com.unifiedserver.dashboard.BuildConfig.VERSION_NAME)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    SettingsInfoRow(label = "Connection", value = "Configured server")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    SettingsInfoRow(
-                        label = "Connected To",
-                        value = uiState.serverUrl.ifBlank { "Not configured" }
+                    Text(
+                        text = "A personal OMDb key adds IMDb ratings to movie and TV details. Stored on this device only.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = omdbApiKey, onValueChange = { omdbApiKey = it },
+                        label = { Text("OMDb API key") }, singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(), colors = settingsTextFieldColors()
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = { viewModel.saveOmdbApiKey(omdbApiKey) },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !uiState.isSaving && omdbApiKey != uiState.omdbApiKey
+                    ) {
+                        Text(if (uiState.savingSection == "omdb") "Saving…" else "Save OMDb key")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            SectionHeader("About")
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = Surface),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    SettingsInfoRow(label = "App version", value = com.unifiedserver.dashboard.BuildConfig.VERSION_NAME)
                 }
             }
         }

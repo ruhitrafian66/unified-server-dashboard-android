@@ -43,14 +43,14 @@ fun formatEta(seconds: Long): String {
 
 /**
  * Format uptime in seconds to human-readable uptime string
- * Examples: "2d 5h 30m", "3h 45m", "25m"
+ * Examples: "2d 5h", "3h 45m", "25m"
  */
 fun formatUptime(seconds: Long): String {
     val d = seconds / 86400
     val h = (seconds % 86400) / 3600
     val m = (seconds % 3600) / 60
     return when {
-        d > 0 -> "${d}d ${h}h ${m}m"
+        d > 0 -> "${d}d ${h}h"
         h > 0 -> "${h}h ${m}m"
         else -> "${m}m"
     }
