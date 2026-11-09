@@ -46,7 +46,7 @@ class AutomaticDownloadTest {
 
     @Test fun selectsAcrossAllPagesAndShowsPersistentSuccess() = runTest {
         val repo = Fake().apply { secondPage = true }
-        val vm = TorrentsViewModel(repo)
+        val vm = TorrentsViewModel(repo, DownloadsMonitor(repo))
         vm.autoPickAndAdd(request)
         advanceUntilIdle()
         assertEquals(listOf(0, 1), repo.offsets)
@@ -58,7 +58,7 @@ class AutomaticDownloadTest {
 
     @Test fun stableFirstPageDoesNotEndSearchPrematurely() = runTest {
         val repo = Fake().apply { runningPolls = 5 }
-        val vm = TorrentsViewModel(repo)
+        val vm = TorrentsViewModel(repo, DownloadsMonitor(repo))
         vm.autoPickAndAdd(request)
         advanceTimeBy(7_000)
         runCurrent()
@@ -72,7 +72,7 @@ class AutomaticDownloadTest {
 
     @Test fun cancellationStopsServerSearchAndNeverAdds() = runTest {
         val repo = Fake().apply { runningPolls = 1000 }
-        val vm = TorrentsViewModel(repo)
+        val vm = TorrentsViewModel(repo, DownloadsMonitor(repo))
         vm.autoPickAndAdd(request)
         runCurrent()
         vm.stopSearch()
@@ -85,7 +85,7 @@ class AutomaticDownloadTest {
 
     @Test fun timeoutNeverSelectsAnUnfinishedResultSet() = runTest {
         val repo = Fake().apply { runningPolls = 1000 }
-        val vm = TorrentsViewModel(repo)
+        val vm = TorrentsViewModel(repo, DownloadsMonitor(repo))
         vm.autoPickAndAdd(request)
         advanceUntilIdle()
         assertTrue(repo.added.isEmpty())
@@ -96,7 +96,7 @@ class AutomaticDownloadTest {
 
     @Test fun uncertainAddDoesNotOfferAutomaticRetry() = runTest {
         val repo = Fake().apply { addFails = true }
-        val vm = TorrentsViewModel(repo)
+        val vm = TorrentsViewModel(repo, DownloadsMonitor(repo))
         vm.autoPickAndAdd(request)
         advanceUntilIdle()
         assertEquals(DownloadStage.FAILED, vm.uiState.value.operation?.stage)
@@ -109,7 +109,7 @@ class AutomaticDownloadTest {
 
     @Test fun addingCannotBeReplacedOrPresentedAsCancelled() = runTest {
         val repo = Fake().apply { addDelay = 1000 }
-        val vm = TorrentsViewModel(repo)
+        val vm = TorrentsViewModel(repo, DownloadsMonitor(repo))
         vm.autoPickAndAdd(request)
         runCurrent()
         assertEquals(DownloadStage.ADDING, vm.uiState.value.operation?.stage)

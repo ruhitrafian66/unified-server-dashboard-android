@@ -14,11 +14,14 @@ import javax.inject.Inject
 
 data class SettingsUiState(
     val serverUrl: String = "",
-    val tmdbApiKey: String = "",
+    /** Whether the server has a TMDB key; null until known. */
+    val tmdbConfigured: Boolean? = null,
     val omdbApiKey: String = "",
     val autoStopEnabled: Boolean = false,
-    val autoStopDelayMinutes: Int = 0,
-    val autoStopRatio: Float = 0f,
+    /** Seed for this many minutes after completion; null = no time limit. */
+    val autoStopMinutes: Int? = null,
+    /** Or until this upload ratio; null = no ratio limit. */
+    val autoStopRatio: Float? = null,
     val autoCheckEnabled: Boolean = false,
     val isLoading: Boolean = true,
     val configurationError: String? = null,
@@ -43,19 +46,18 @@ class SettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            combine(preferences.serverUrl, preferences.tmdbApiKey, preferences.omdbApiKey) { url, tmdb, omdb ->
-                Triple(url, tmdb, omdb)
-            }.collect { (url, tmdb, omdb) ->
-                // Never replace unrelated server-confirmed settings with defaults.
-                _uiState.value = _uiState.value.copy(serverUrl = url, tmdbApiKey = tmdb, omdbApiKey = omdb)
-            }
+            combine(preferences.serverUrl, preferences.omdbApiKey) { url, omdb -> url to omdb }
+                .collect { (url, omdb) ->
+                    // Never replace unrelated server-confirmed settings with defaults.
+                    _uiState.value = _uiState.value.copy(serverUrl = url, omdbApiKey = omdb)
+                }
         }
         viewModelScope.launch {
             automation.state.collect { settings ->
                 _uiState.value = _uiState.value.copy(isLoading = settings.refreshing,
                     autoStopEnabled = settings.autoStop?.enabled ?: false,
-                    autoStopDelayMinutes = settings.autoStop?.seedingTimeLimit ?: 0,
-                    autoStopRatio = settings.autoStop?.ratioLimit ?: 0f,
+                    autoStopMinutes = settings.autoStop?.seedTimeLimit,
+                    autoStopRatio = settings.autoStop?.ratioLimit,
                     autoCheckEnabled = settings.autoCheck ?: false,
                     autoStopReady = settings.autoStop != null && settings.autoStopError == null,
                     autoCheckReady = settings.autoCheck != null && settings.autoCheckError == null,
@@ -68,7 +70,14 @@ class SettingsViewModel @Inject constructor(
         refreshConfiguration()
     }
 
-    fun refreshConfiguration() { viewModelScope.launch { automation.refresh() } }
+    fun refreshConfiguration() {
+        viewModelScope.launch { automation.refresh() }
+        viewModelScope.launch {
+            showsRepository.getTmdbConfig().onSuccess {
+                _uiState.value = _uiState.value.copy(tmdbConfigured = it.configured)
+            }
+        }
+    }
 
     private fun save(section: String, message: String, action: suspend () -> Unit) {
         if (_uiState.value.isSaving) return
@@ -90,20 +99,23 @@ class SettingsViewModel @Inject constructor(
         automation.invalidate()
     }
 
-    fun saveTmdbApiKey(key: String) = save("tmdb", "TMDB key saved on server and device") {
-        require(key.isNotBlank()) { "Enter a TMDB API key." }
-        showsRepository.setTmdbApiKey(key).getOrThrow()
-        preferences.updateTmdbApiKey(key)
-    }
+    /** The server verifies the key with TMDB before storing it; every device then uses it. */
+    fun saveTmdbApiKey(key: String, onSaved: () -> Unit = {}) =
+        save("tmdb", "TMDB key verified and saved on the server") {
+            require(key.isNotBlank()) { "Enter a TMDB API key." }
+            showsRepository.setTmdbApiKey(key).getOrThrow()
+            _uiState.value = _uiState.value.copy(tmdbConfigured = true)
+            onSaved()
+        }
 
     fun saveOmdbApiKey(key: String) = save("omdb", "Optional OMDb key saved on this device") {
         preferences.updateOmdbApiKey(key.trim())
     }
 
-    fun saveAutoStopConfig(enabled: Boolean, delayText: String, ratioText: String) =
-        save("autoStop", "Auto-stop settings saved") {
-            val (minutes, ratio) = parseAutoStopLimits(delayText, ratioText)
-            automation.saveAutoStop(AutoStopConfig(enabled, minutes, ratio.takeIf { it > 0 })).getOrThrow()
+    fun saveAutoStopConfig(enabled: Boolean, minutesText: String, ratioText: String) =
+        save("autoStop", if (enabled) "Seeding limits saved in qBittorrent" else "Seeding limits disabled") {
+            val (minutes, ratio) = parseAutoStopLimits(minutesText, ratioText)
+            automation.saveAutoStop(AutoStopConfig(enabled, minutes, ratio)).getOrThrow()
         }
 
     fun saveAutoCheckEnabled(enabled: Boolean) = save("autoCheck", "Auto-check setting saved") {
@@ -113,10 +125,20 @@ class SettingsViewModel @Inject constructor(
     fun clearSnackbar() { _uiState.value = _uiState.value.copy(snackbarMessage = null) }
 }
 
-internal fun parseAutoStopLimits(delayText: String, ratioText: String): Pair<Int, Float> {
-    val minutes = delayText.trim().toIntOrNull()
-    require(minutes != null && minutes >= 0) { "Enter a non-negative whole number of minutes." }
-    val ratio = ratioText.trim().replace(',', '.').toFloatOrNull()
-    require(ratio != null && ratio.isFinite() && ratio >= 0f) { "Enter a non-negative ratio; use 0 for no ratio limit." }
+/**
+ * Both limits are optional; blank means "no limit of that kind". With both blank,
+ * qBittorrent stops seeding as soon as a download completes.
+ */
+internal fun parseAutoStopLimits(minutesText: String, ratioText: String): Pair<Int?, Float?> {
+    val minutes = minutesText.trim().takeIf { it.isNotEmpty() }?.let { text ->
+        text.toIntOrNull()?.takeIf { it >= 0 } ?: throw IllegalArgumentException("Enter a non-negative whole number of minutes, or leave it empty.")
+    }
+    val ratio = ratioText.trim().replace(',', '.').takeIf { it.isNotEmpty() }?.let { text ->
+        text.toFloatOrNull()?.takeIf { it.isFinite() && it >= 0f }
+            ?: throw IllegalArgumentException("Enter a non-negative ratio, or leave it empty.")
+    }
     return minutes to ratio
 }
+
+internal fun formatRatio(ratio: Float?): String =
+    ratio?.let { if (it % 1f == 0f) "%.1f".format(java.util.Locale.ROOT, it) else it.toString() } ?: ""

@@ -5,8 +5,6 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.floatPreferencesKey
-import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -18,11 +16,9 @@ class PreferencesManager(private val dataStore: DataStore<Preferences>) {
 
     companion object {
         val SERVER_URL = stringPreferencesKey("server_url")
-        val TMDB_API_KEY = stringPreferencesKey("tmdb_api_key")
         val OMDB_API_KEY = stringPreferencesKey("omdb_api_key")
-        val AUTO_STOP_ENABLED = booleanPreferencesKey("auto_stop_enabled")
-        val AUTO_STOP_SEEDING_TIME = intPreferencesKey("auto_stop_seeding_time")
-        val AUTO_STOP_RATIO = floatPreferencesKey("auto_stop_ratio")
+        // Superseded by server-side settings; removed from storage on first launch.
+        private val LEGACY_KEYS = listOf("tmdb_api_key", "auto_stop_enabled", "auto_stop_seeding_time", "auto_stop_ratio")
         val SETUP_COMPLETE = booleanPreferencesKey("setup_complete")
     }
 
@@ -30,26 +26,10 @@ class PreferencesManager(private val dataStore: DataStore<Preferences>) {
         preferences[SERVER_URL] ?: ""
     }
 
-    val tmdbApiKey: Flow<String> = dataStore.data.map { preferences ->
-        preferences[TMDB_API_KEY] ?: ""
-    }
-
     val omdbApiKey: Flow<String> = dataStore.data.map { it[OMDB_API_KEY] ?: "" }
 
     suspend fun updateOmdbApiKey(key: String) {
         dataStore.edit { it[OMDB_API_KEY] = key }
-    }
-
-    val autoStopEnabled: Flow<Boolean> = dataStore.data.map { preferences ->
-        preferences[AUTO_STOP_ENABLED] ?: false
-    }
-
-    val autoStopSeedingTime: Flow<Int> = dataStore.data.map { preferences ->
-        preferences[AUTO_STOP_SEEDING_TIME] ?: 60
-    }
-
-    val autoStopRatio: Flow<Float> = dataStore.data.map { preferences ->
-        preferences[AUTO_STOP_RATIO] ?: 1.0f
     }
 
     val setupComplete: Flow<Boolean> = dataStore.data.map { preferences ->
@@ -69,35 +49,13 @@ class PreferencesManager(private val dataStore: DataStore<Preferences>) {
         }
     }
 
-    suspend fun updateAutoStopConfig(enabled: Boolean, minutes: Int, ratio: Float) {
-        dataStore.edit {
-            it[AUTO_STOP_ENABLED] = enabled
-            it[AUTO_STOP_SEEDING_TIME] = minutes
-            it[AUTO_STOP_RATIO] = ratio
-        }
-    }
-
-    suspend fun updateTmdbApiKey(key: String) {
-        dataStore.edit { preferences ->
-            preferences[TMDB_API_KEY] = key
-        }
-    }
-
-    suspend fun updateAutoStopEnabled(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[AUTO_STOP_ENABLED] = enabled
-        }
-    }
-
-    suspend fun updateAutoStopSeedingTime(minutes: Int) {
-        dataStore.edit { preferences ->
-            preferences[AUTO_STOP_SEEDING_TIME] = minutes
-        }
-    }
-
-    suspend fun updateAutoStopRatio(ratio: Float) {
-        dataStore.edit { preferences ->
-            preferences[AUTO_STOP_RATIO] = ratio
+    /**
+     * The TMDB key and seeding limits now live on the server (shared by every device).
+     * Drop the old device copies so a stale API key is not kept around.
+     */
+    suspend fun removeLegacySettings() {
+        dataStore.edit { prefs ->
+            prefs.asMap().keys.filter { it.name in LEGACY_KEYS }.forEach { prefs.remove(it) }
         }
     }
 

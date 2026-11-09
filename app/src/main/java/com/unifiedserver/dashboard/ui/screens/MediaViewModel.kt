@@ -18,7 +18,12 @@ import javax.inject.Inject
 
 data class MediaUiState(
     val trendingTv: List<TmdbMediaItem> = emptyList(),
+    /** Movies newly out on digital/streaming (not trending, which includes cinema-only films). */
     val trendingMovies: List<TmdbMediaItem> = emptyList(),
+    val moviesPage: Int = 0,
+    val moviesTotalPages: Int = 0,
+    val isLoadingMoreMovies: Boolean = false,
+    val moviesLoadMoreError: String? = null,
     val isLoadingTrending: Boolean = false,
     val trendingError: String? = null,
     val searchQuery: String = "",
@@ -52,24 +57,46 @@ class MediaViewModel @Inject constructor(
     private var searchJob: Job? = null
     private var detailJob: Job? = null
     private var trendingJob: Job? = null
+    private var moreMoviesJob: Job? = null
     private var searchType = "all"
 
     init { loadTrending() }
 
     fun loadTrending() {
         trendingJob?.cancel()
+        moreMoviesJob?.cancel()
         trendingJob = viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoadingTrending = true, trendingError = null)
+            _uiState.value = _uiState.value.copy(isLoadingTrending = true, trendingError = null,
+                isLoadingMoreMovies = false, moviesLoadMoreError = null)
             val tv = async { mediaRepository.getTrendingTv() }
-            val movies = async { mediaRepository.getTrendingMovies() }
+            val movies = async { mediaRepository.getNewOnStreamingMovies(1) }
             val tvResult = tv.await()
             val movieResult = movies.await()
+            val moviePage = movieResult.getOrNull()
             _uiState.value = _uiState.value.copy(
                 isLoadingTrending = false,
                 trendingTv = tvResult.getOrElse { _uiState.value.trendingTv },
-                trendingMovies = movieResult.getOrElse { _uiState.value.trendingMovies },
+                trendingMovies = moviePage?.results ?: _uiState.value.trendingMovies,
+                moviesPage = moviePage?.page ?: _uiState.value.moviesPage,
+                moviesTotalPages = moviePage?.totalPages ?: _uiState.value.moviesTotalPages,
                 trendingError = tvResult.exceptionOrNull()?.message ?: movieResult.exceptionOrNull()?.message
             )
+        }
+    }
+
+    fun loadMoreMovies() {
+        val state = _uiState.value
+        if (state.isLoadingTrending || state.isLoadingMoreMovies || state.moviesPage >= state.moviesTotalPages) return
+        _uiState.value = state.copy(isLoadingMoreMovies = true, moviesLoadMoreError = null)
+        moreMoviesJob = viewModelScope.launch {
+            mediaRepository.getNewOnStreamingMovies(state.moviesPage + 1).onSuccess { page ->
+                _uiState.value = _uiState.value.copy(isLoadingMoreMovies = false,
+                    trendingMovies = (_uiState.value.trendingMovies + page.results).distinctBy { it.id },
+                    moviesPage = page.page, moviesTotalPages = page.totalPages)
+            }.onFailure {
+                _uiState.value = _uiState.value.copy(isLoadingMoreMovies = false,
+                    moviesLoadMoreError = "Could not load more: ${it.message}")
+            }
         }
     }
 

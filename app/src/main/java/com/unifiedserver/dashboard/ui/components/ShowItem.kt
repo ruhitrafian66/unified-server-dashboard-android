@@ -102,7 +102,7 @@ fun ShowCard(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "S${show.currentSeason.toString().padStart(2, '0')}E${show.currentEpisode.toString().padStart(2, '0')}",
+                        text = com.unifiedserver.dashboard.data.models.episodeCode(show.currentSeason, show.currentEpisode),
                         style = MaterialTheme.typography.labelMedium,
                         color = Primary
                     )
@@ -112,6 +112,17 @@ fun ShowCard(
                             text = "Next: ${show.nextEpisodeAirDate}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    show.pendingEpisode?.let { pending ->
+                        Spacer(modifier = Modifier.height(4.dp))
+                        StatusBadge(text = "⏳ ${pending.code} aired, waiting for a release", color = StatusYellow)
+                    }
+                    show.missedEpisodes?.takeIf { it.isNotEmpty() }?.let { missed ->
+                        Spacer(modifier = Modifier.height(4.dp))
+                        StatusBadge(
+                            text = "⚠ Missed ${missed.joinToString { it.code }} — search manually",
+                            color = StatusRed
                         )
                     }
                     Spacer(modifier = Modifier.height(4.dp))

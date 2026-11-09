@@ -85,8 +85,9 @@ class AutomationSettingsRepository @Inject constructor(
             val server = selectServer()
             torrents.setAutoStopConfig(config).getOrThrow()
             check(verifyServer(server)) { "Server changed while saving. Reload its settings." }
-            _state.value = _state.value.copy(autoStop = config, autoStopError = null)
-            preferences.updateAutoStopConfig(config.enabled, config.seedingTimeLimit, config.ratioLimit ?: 0f)
+            // qBittorrent normalises the limits; show what it actually stored.
+            val confirmed = torrents.getAutoStopConfig().getOrNull() ?: config
+            _state.value = _state.value.copy(autoStop = confirmed, autoStopError = null)
         }
     }
 }

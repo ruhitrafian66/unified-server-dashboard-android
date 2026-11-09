@@ -14,6 +14,7 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
 import com.unifiedserver.dashboard.data.PreferencesManager
 import com.unifiedserver.dashboard.data.repository.DownloadHandoff
+import com.unifiedserver.dashboard.ui.components.DownloadsBar
 import com.unifiedserver.dashboard.ui.screens.*
 import com.unifiedserver.dashboard.ui.theme.Background
 import com.unifiedserver.dashboard.ui.theme.Surface
@@ -22,12 +23,14 @@ private data class Destination(val route: String, val title: String, val icon: I
 private val destinations = listOf(
     Destination("dashboard", "Home", Icons.Default.Dashboard),
     Destination("tv", "Media", Icons.Default.Movie),
-    Destination("torrents", "Downloads", Icons.Default.Download),
+    Destination("storage", "Storage", Icons.Default.SdStorage),
     Destination("system", "Server", Icons.Default.Memory)
 )
-private val mediaRoutes = listOf("movies", "tv", "shows")
+// Media tabs; "torrents" is where "Find sources" and auto-download land.
+private val mediaRoutes = listOf("movies", "tv", "shows", "torrents")
+private val mediaTabLabels = listOf("Movies", "TV", "Tracked", "Torrents")
 val LocalOpenSettings = staticCompositionLocalOf<() -> Unit> { {} }
-val LocalOpenDownloads = staticCompositionLocalOf<() -> Unit> { {} }
+val LocalOpenStorage = staticCompositionLocalOf<() -> Unit> { {} }
 val LocalNavigateBack = staticCompositionLocalOf<() -> Unit> { {} }
 
 @Composable
@@ -69,20 +72,24 @@ fun AppNavigation(isSetupComplete: Boolean, preferences: PreferencesManager, han
         }
         CompositionLocalProvider(
             LocalOpenSettings provides { navController.navigate("settings") { launchSingleTop = true } },
-            LocalOpenDownloads provides { navigateTop("torrents") },
+            LocalOpenStorage provides { navigateTop("storage") },
             LocalNavigateBack provides { navController.popBackStack() }
         ) {
             Scaffold(
                 containerColor = Background,
                 bottomBar = {
-                    if (isSetupComplete) NavigationBar(containerColor = Surface) {
-                        destinations.forEach { item ->
-                            NavigationBarItem(
-                                selected = route == item.route || (item.route == "tv" && route in mediaRoutes),
-                                onClick = { navigateTop(if (item.route == "tv") lastMediaRoute else item.route) },
-                                icon = { Icon(item.icon, contentDescription = null) },
-                                label = { Text(item.title) }
-                            )
+                    if (isSetupComplete) Column {
+                        // Live progress while anything downloads, on every screen.
+                        if (route != "settings") DownloadsBar()
+                        NavigationBar(containerColor = Surface) {
+                            destinations.forEach { item ->
+                                NavigationBarItem(
+                                    selected = route == item.route || (item.route == "tv" && route in mediaRoutes),
+                                    onClick = { navigateTop(if (item.route == "tv") lastMediaRoute else item.route) },
+                                    icon = { Icon(item.icon, contentDescription = null) },
+                                    label = { Text(item.title) }
+                                )
+                            }
                         }
                     }
                 }
@@ -90,7 +97,7 @@ fun AppNavigation(isSetupComplete: Boolean, preferences: PreferencesManager, han
                 Column(Modifier.padding(padding).consumeWindowInsets(padding)) {
                     if (route in mediaRoutes) {
                         TabRow(selectedTabIndex = mediaRoutes.indexOf(route), containerColor = Surface) {
-                            listOf("Movies", "TV", "Tracked").forEachIndexed { index, label ->
+                            mediaTabLabels.forEachIndexed { index, label ->
                                 Tab(selected = route == mediaRoutes[index], text = { Text(label) },
                                     onClick = { navigateTop(mediaRoutes[index]) })
                             }
@@ -106,6 +113,7 @@ fun AppNavigation(isSetupComplete: Boolean, preferences: PreferencesManager, han
                         composable("torrents") { TorrentsScreen(handoff = handoff) }
                         composable("tv") { TvScreen() }
                         composable("movies") { MoviesScreen() }
+                        composable("storage") { StorageScreen() }
                         composable("system") { SystemScreen() }
                         composable("settings") { SettingsScreen() }
                         composable("shows") { ShowsScreen() }

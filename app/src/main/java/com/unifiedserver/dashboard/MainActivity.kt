@@ -9,6 +9,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import com.unifiedserver.dashboard.data.PreferencesManager
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.unifiedserver.dashboard.ui.navigation.AppNavigation
 import com.unifiedserver.dashboard.ui.theme.Background
 import com.unifiedserver.dashboard.ui.theme.UnifiedServerDashboardTheme
@@ -28,6 +30,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        lifecycleScope.launch { preferencesManager.removeLegacySettings() }
         setContent {
             UnifiedServerDashboardTheme {
                 Surface(

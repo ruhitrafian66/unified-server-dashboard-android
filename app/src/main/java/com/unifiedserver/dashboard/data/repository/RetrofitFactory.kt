@@ -3,6 +3,7 @@ package com.unifiedserver.dashboard.data.repository
 import com.unifiedserver.dashboard.data.ApiService
 import com.unifiedserver.dashboard.data.PreferencesManager
 import com.unifiedserver.dashboard.data.models.ApiResponse
+import com.google.gson.JsonParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -21,6 +22,13 @@ fun normalizeServerUrl(value: String): String {
     return url.toString().trimEnd('/') + "/"
 }
 
+/**
+ * The backend rejects POST/PUT/DELETE without this header (CSRF guard).
+ * It is only added to requests for the configured dashboard server.
+ */
+const val CSRF_HEADER = "X-Requested-With"
+const val CSRF_VALUE = "dashboard"
+
 /** Shared connection pool; no request/response bodies or credentials are logged. */
 object BackendClient {
     val httpClient: OkHttpClient = OkHttpClient.Builder()
@@ -28,6 +36,12 @@ object BackendClient {
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS)
+        .build()
+
+    private val backendHttpClient: OkHttpClient = httpClient.newBuilder()
+        .addInterceptor { chain ->
+            chain.proceed(chain.request().newBuilder().header(CSRF_HEADER, CSRF_VALUE).build())
+        }
         .build()
 
     private var currentUrl: String? = null
@@ -39,7 +53,7 @@ object BackendClient {
         if (url != currentUrl) {
             currentService = Retrofit.Builder()
                 .baseUrl(url)
-                .client(httpClient)
+                .client(backendHttpClient)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
                 .create(ApiService::class.java)
@@ -61,8 +75,24 @@ internal inline fun <T> apiResult(block: () -> T): Result<T> = try {
     Result.failure(error)
 }
 
+/** The backend reports failures as `{ "error": "..." }`; prefer that over a bare status code. */
+internal fun Response<*>.httpFailure(): IOException {
+    val serverMessage = try {
+        errorBody()?.string()?.let { JsonParser.parseString(it).asJsonObject.get("error")?.asString }
+    } catch (_: Exception) {
+        null
+    }
+    return IOException(serverMessage?.takeIf { it.isNotBlank() } ?: "Server request failed (HTTP ${code()}).")
+}
+
+/** Returns the body of a successful response, or throws the server's error message. */
+internal fun <T> Response<T>.bodyOr(default: () -> T): T {
+    if (!isSuccessful) throw httpFailure()
+    return body() ?: default()
+}
+
 internal fun <T> Response<ApiResponse<T>>.requireSuccess() {
-    if (!isSuccessful) throw IOException("Server request failed (HTTP ${code()}).")
+    if (!isSuccessful) throw httpFailure()
     if (code() == 204) return
     val payload = body() ?: throw IOException("Server returned an empty response.")
     if (!payload.success || payload.error != null) {

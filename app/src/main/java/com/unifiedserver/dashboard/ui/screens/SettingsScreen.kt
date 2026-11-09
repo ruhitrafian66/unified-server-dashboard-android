@@ -35,12 +35,12 @@ fun SettingsScreen(
 
     // Local editable state
     var serverUrl by rememberSaveable(uiState.serverUrl) { mutableStateOf(uiState.serverUrl) }
-    var tmdbApiKey by remember(uiState.tmdbApiKey) { mutableStateOf(uiState.tmdbApiKey) }
+    var tmdbApiKey by remember { mutableStateOf("") }
     var omdbApiKey by remember(uiState.omdbApiKey) { mutableStateOf(uiState.omdbApiKey) }
     var tmdbKeyVisible by remember { mutableStateOf(false) }
     var autoStopEnabled by rememberSaveable(uiState.autoStopEnabled) { mutableStateOf(uiState.autoStopEnabled) }
-    var seedingTime by rememberSaveable(uiState.autoStopDelayMinutes) { mutableStateOf(uiState.autoStopDelayMinutes.toString()) }
-    var ratioLimit by rememberSaveable(uiState.autoStopRatio) { mutableStateOf("%.2f".format(uiState.autoStopRatio)) }
+    var seedingTime by rememberSaveable(uiState.autoStopMinutes) { mutableStateOf(uiState.autoStopMinutes?.toString() ?: "") }
+    var ratioLimit by rememberSaveable(uiState.autoStopRatio) { mutableStateOf(formatRatio(uiState.autoStopRatio)) }
     var autoCheckEnabled by rememberSaveable(uiState.autoCheckEnabled) { mutableStateOf(uiState.autoCheckEnabled) }
 
     LaunchedEffect(uiState.snackbarMessage) {
@@ -114,7 +114,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             // TMDB API Key
-            SectionHeader("TMDB Integration")
+            SectionHeader("TMDB (movie & TV data)")
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -123,8 +123,15 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    when (uiState.tmdbConfigured) {
+                        true -> Text("✓ Configured on the server — works on every device.",
+                            style = MaterialTheme.typography.bodySmall, color = StatusGreen)
+                        false -> Text("Not configured — Media and TV tracking need it.",
+                            style = MaterialTheme.typography.bodySmall, color = StatusYellow)
+                        null -> {}
+                    }
                     Text(
-                        text = "Used for Movies, TV discovery, and tracked shows. Saved to both this device and your server.",
+                        text = "Stored only on your server, which makes all TMDB requests. Enter a key to replace it.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -132,7 +139,8 @@ fun SettingsScreen(
                     OutlinedTextField(
                         value = tmdbApiKey,
                         onValueChange = { tmdbApiKey = it },
-                        label = { Text("TMDB API Key") },
+                        label = { Text("TMDB API key (v3)") },
+                        placeholder = { Text(if (uiState.tmdbConfigured == true) "•••••••• (saved)" else "Your TMDB v3 API key") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         visualTransformation = if (tmdbKeyVisible)
@@ -152,20 +160,12 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(
-                        onClick = { viewModel.saveTmdbApiKey(tmdbApiKey.trim()) },
+                        onClick = { viewModel.saveTmdbApiKey(tmdbApiKey.trim()) { tmdbApiKey = "" } },
                         colors = ButtonDefaults.buttonColors(containerColor = Primary),
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isSaving
+                        enabled = !uiState.isSaving && tmdbApiKey.isNotBlank()
                     ) {
-                        if (uiState.isSaving) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = OnPrimary,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text("Save TMDB Key")
-                        }
+                        Text(if (uiState.savingSection == "tmdb") "Verifying…" else "Verify and save")
                     }
                 }
             }
@@ -173,7 +173,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             // Auto-Stop Seeding
-            SectionHeader("Auto-Stop Seeding")
+            SectionHeader("Seeding limits")
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -189,12 +189,12 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Enable Auto-Stop",
+                                text = "Stop seeding automatically",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = OnSurface
                             )
                             Text(
-                                text = "Automatically stop seeding based on limits",
+                                text = "Saved in qBittorrent, so it applies even when this app is closed",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -218,7 +218,8 @@ fun SettingsScreen(
                         OutlinedTextField(
                             value = seedingTime,
                             onValueChange = { seedingTime = it.filter { c -> c.isDigit() } },
-                            label = { Text("Stop Delay After Completion (minutes, 0 = immediate)") },
+                            label = { Text("Seed for (minutes)") },
+                            placeholder = { Text("Empty = no time limit") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -228,7 +229,9 @@ fun SettingsScreen(
                         OutlinedTextField(
                             value = ratioLimit,
                             onValueChange = { ratioLimit = it },
-                            label = { Text("Ratio Limit") },
+                            label = { Text("Or until ratio") },
+                            placeholder = { Text("e.g. 1.0") },
+                            supportingText = { Text("Leave both empty to stop as soon as a download completes.") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -241,7 +244,7 @@ fun SettingsScreen(
                         onClick = {
                             viewModel.saveAutoStopConfig(
                                 enabled = autoStopEnabled,
-                                delayText = seedingTime,
+                                minutesText = seedingTime,
                                 ratioText = ratioLimit
                             )
                         },
@@ -249,7 +252,7 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !uiState.isLoading && !uiState.isSaving && uiState.autoStopReady
                     ) {
-                        Text(if (uiState.savingSection == "autoStop") "Saving…" else "Save Auto-Stop Config")
+                        Text(if (uiState.savingSection == "autoStop") "Saving…" else "Save seeding limits")
                     }
                 }
             }

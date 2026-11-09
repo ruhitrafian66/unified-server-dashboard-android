@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
@@ -34,7 +35,8 @@ fun MediaBrowseScreen(type: String, viewModel: MediaViewModel) {
     var searching by rememberSaveable { mutableStateOf(false) }
     val title = if (type == "tv") "TV discovery" else "Movies"
     val trending = if (type == "tv") state.trendingTv else state.trendingMovies
-    if (!searching) RefreshWhileVisible(60_000) { viewModel.loadTrending() }
+    // Refreshing would reset "Load more" paging, so only auto-refresh the first page.
+    if (!searching && (type == "tv" || state.moviesPage <= 1)) RefreshWhileVisible(60_000) { viewModel.loadTrending() }
     BackHandler(searching) {
         searching = false
         viewModel.clearSearch()
@@ -97,7 +99,8 @@ fun MediaBrowseScreen(type: String, viewModel: MediaViewModel) {
             } else {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text("Trending this week", style = MaterialTheme.typography.titleSmall)
+                    Text(if (type == "tv") "Trending this week" else "New on streaming",
+                        style = MaterialTheme.typography.titleSmall)
                     TextButton(onClick = { viewModel.loadTrending() }, enabled = !state.isLoadingTrending) { Text("Refresh") }
                 }
                 state.trendingError?.let {
@@ -106,13 +109,26 @@ fun MediaBrowseScreen(type: String, viewModel: MediaViewModel) {
                 when {
                     state.isLoadingTrending && trending.isEmpty() -> LoadingScreen()
                     trending.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No titles available. Check your integration in Settings.")
+                        Text("No titles available. TMDB must be configured on the server (Settings).",
+                            modifier = Modifier.padding(16.dp))
                     }
                     else -> LazyVerticalGrid(GridCells.Adaptive(132.dp),
                         contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(trending, key = { it.id }) { item ->
                             MediaCard(item) { viewModel.openDetail(item) }
+                        }
+                        if (type == "movie" && (state.moviesPage < state.moviesTotalPages || state.moviesLoadMoreError != null)) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    state.moviesLoadMoreError?.let {
+                                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    TextButton(onClick = { viewModel.loadMoreMovies() }, enabled = !state.isLoadingMoreMovies) {
+                                        Text(if (state.isLoadingMoreMovies) "Loading…" else "Load more")
+                                    }
+                                }
+                            }
                         }
                     }
                 }

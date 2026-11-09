@@ -23,7 +23,7 @@ class AutomationSettingsTest {
     private var unavailable = false
     private var saveRejected = false
     private val torrents = object : TorrentRepository(prefs) {
-        override suspend fun getAutoStopConfig() = Result.success(AutoStopConfig(enabled = true, seedingTimeLimit = 60))
+        override suspend fun getAutoStopConfig() = Result.success(AutoStopConfig(enabled = true, seedTimeLimit = 60))
     }
     private val shows = object : ShowsRepository(prefs) {
         override suspend fun getAutoCheckConfig(): Result<AutoCheckConfig> =

@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import javax.inject.Inject
 
 data class ShowsUiState(
@@ -139,6 +140,8 @@ class ShowsViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(snackbarMessage = message)
                     loadShows()
                     onAdded()
+                    // The server looks up the next air date in the background.
+                    launch { delay(4_000); loadShows() }
                 }
                 .onFailure { e ->
                     _uiState.value = _uiState.value.copy(
@@ -185,26 +188,49 @@ class ShowsViewModel @Inject constructor(
         }
     }
 
+    private var checkJob: Job? = null
+
+    /**
+     * The server checks all active shows in the background (it can take minutes);
+     * poll its status until the sweep ends, then report what it found.
+     */
     fun checkEpisodes() {
-        viewModelScope.launch {
+        if (checkJob?.isActive == true) return
+        checkJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isCheckingEpisodes = true)
-            repository.checkEpisodes()
-                .onSuccess { result ->
-                    val msg = result.message.ifBlank {
-                        "Checked shows, found ${result.downloads.size} episode(s)"
-                    }
-                    _uiState.value = _uiState.value.copy(
-                        isCheckingEpisodes = false,
-                        snackbarMessage = msg
-                    )
-                    loadShows()
+            val started = repository.checkEpisodes()
+            started.onFailure { e ->
+                _uiState.value = _uiState.value.copy(isCheckingEpisodes = false,
+                    snackbarMessage = "Error starting check: ${e.message}")
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(
+                snackbarMessage = started.getOrNull()?.message?.ifBlank { null } ?: "Checking in the background…")
+            loadQueueStatus()
+            var status: CheckStatusResponse? = null
+            var failures = 0
+            val deadline = System.currentTimeMillis() + CHECK_TIMEOUT_MS
+            while (System.currentTimeMillis() < deadline) {
+                delay(CHECK_POLL_MS)
+                repository.getCheckStatus()
+                    .onSuccess { status = it; failures = 0 }
+                    .onFailure { failures++ }
+                if (status?.running == false || failures >= 3) break
+            }
+            val finished = status?.takeIf { !it.running }
+            val found = finished?.lastSweep?.downloads?.size ?: 0
+            val missed = finished?.lastSweep?.missed?.size ?: 0
+            _uiState.value = _uiState.value.copy(
+                isCheckingEpisodes = false,
+                snackbarMessage = when {
+                    finished == null -> "The check is still running on the server. Refresh later for results."
+                    found > 0 -> "Check finished: $found new episode(s) added"
+                    missed > 0 -> "Check finished: $missed episode(s) could not be found"
+                    else -> "Check finished: nothing new yet"
                 }
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(
-                        isCheckingEpisodes = false,
-                        snackbarMessage = "Error: ${e.message}"
-                    )
-                }
+            )
+            loadShows()
+            loadQueueStatus()
         }
     }
 
@@ -346,3 +372,6 @@ class ShowsViewModel @Inject constructor(
         refreshAutomation()
     }
 }
+
+private const val CHECK_POLL_MS = 4_000L
+private const val CHECK_TIMEOUT_MS = 10 * 60 * 1000L

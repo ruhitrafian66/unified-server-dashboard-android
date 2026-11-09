@@ -17,9 +17,6 @@ interface ApiService {
     @POST("api/qbittorrent/torrents/add")
     suspend fun addTorrent(@Body request: AddTorrentRequest): Response<ApiResponse<Any>>
 
-    @POST("api/qbittorrent/torrents/add-advanced")
-    suspend fun addTorrentAdvanced(@Body request: AddTorrentAdvancedRequest): Response<ApiResponse<Any>>
-
     @POST("api/qbittorrent/torrents/{action}")
     suspend fun torrentAction(
         @Path("action") action: String,
@@ -44,36 +41,23 @@ interface ApiService {
     @POST("api/qbittorrent/search/stop")
     suspend fun stopSearch(@Body request: SearchStopRequest): Response<ApiResponse<Any>>
 
-    // ─── qBittorrent - Auto-Stop ──────────────────────────────────────────────
+    // ─── qBittorrent - Seeding limits (stored in qBittorrent's preferences) ────
     @GET("api/qbittorrent/auto-stop/config")
     suspend fun getAutoStopConfig(): Response<AutoStopConfig>
 
     @POST("api/qbittorrent/auto-stop/config")
     suspend fun setAutoStopConfig(@Body config: AutoStopConfig): Response<ApiResponse<Any>>
 
-    // ─── OMV / System ────────────────────────────────────────────────────────
-    @GET("api/omv/system")
-    suspend fun getSystemInfo(): Response<SystemInfo>
+    // ─── System ──────────────────────────────────────────────────────────────
+    // CPU, memory, disks, services, containers and torrent client in one call.
+    @GET("api/system/overview")
+    suspend fun getOverview(): Response<SystemOverview>
 
-    // Returns { services: [...] }
-    @GET("api/omv/services")
-    suspend fun getServices(): Response<ServicesResponse>
-
-    // Returns { disks: [...] }
-    @GET("api/omv/disks")
-    suspend fun getDisks(): Response<DisksResponse>
-
-    @POST("api/omv/power/{action}")
-    suspend fun powerAction(@Path("action") action: String): Response<ApiResponse<Any>>
-
-    // ─── CPU Monitoring ──────────────────────────────────────────────────────
-    @GET("api/omv/cpu-history")
+    @GET("api/system/cpu-history")
     suspend fun getCpuHistory(@Query("hours") hours: Int = 1): Response<CpuHistoryResponse>
 
-    // ─── Docker ──────────────────────────────────────────────────────────────
-    // Returns { containers: [...] }
-    @GET("api/docker/containers")
-    suspend fun getDockerContainers(): Response<DockerContainersResponse>
+    @POST("api/system/power/{action}")
+    suspend fun powerAction(@Path("action") action: String): Response<ApiResponse<Any>>
 
     // ─── TV Shows ─────────────────────────────────────────────────────────────
     // Returns { shows: [...] }
@@ -92,8 +76,12 @@ interface ApiService {
     @DELETE("api/shows/{id}")
     suspend fun deleteShow(@Path("id") id: String): Response<ApiResponse<Any>>
 
+    // Starts a background check of all active shows (HTTP 202).
     @POST("api/shows/check")
     suspend fun checkEpisodes(): Response<CheckEpisodesResponse>
+
+    @GET("api/shows/check/status")
+    suspend fun getCheckStatus(): Response<CheckStatusResponse>
 
     @GET("api/shows/config/auto-check")
     suspend fun getAutoCheckConfig(): Response<AutoCheckConfig>
@@ -122,4 +110,48 @@ interface ApiService {
 
     @GET("api/shows/download-progress/{sessionId}")
     suspend fun getDownloadProgress(@Path("sessionId") sessionId: String): Response<DownloadProgressResponse>
+
+    // ─── TMDB proxy (the server holds the API key) ────────────────────────────
+    @GET("api/tmdb/trending/tv/week")
+    suspend fun getTrendingTv(): Response<TmdbTrendingResponse>
+
+    // Films with a digital release in the last few months, newest-popular first.
+    @GET("api/tmdb/movies/streaming")
+    suspend fun getNewOnStreamingMovies(@Query("page") page: Int = 1): Response<TmdbDiscoverResponse>
+
+    @GET("api/tmdb/search/multi")
+    suspend fun tmdbSearchMulti(@Query("query") query: String, @Query("page") page: Int = 1): Response<TmdbSearchMultiResponse>
+
+    @GET("api/tmdb/search/tv")
+    suspend fun tmdbSearchTv(@Query("query") query: String, @Query("page") page: Int = 1): Response<TmdbTrendingResponse>
+
+    @GET("api/tmdb/search/movie")
+    suspend fun tmdbSearchMovies(@Query("query") query: String, @Query("page") page: Int = 1): Response<TmdbTrendingResponse>
+
+    @GET("api/tmdb/movie/{id}")
+    suspend fun getMovieDetail(
+        @Path("id") id: Int,
+        @Query("append_to_response") append: String = "external_ids"
+    ): Response<TmdbMovieDetail>
+
+    @GET("api/tmdb/tv/{id}")
+    suspend fun getTvDetail(
+        @Path("id") id: Int,
+        @Query("append_to_response") append: String = "external_ids"
+    ): Response<TmdbTvDetail>
+
+    // ─── Media library (download folder) ──────────────────────────────────────
+    // The server caches scans for 30 s; refresh=1 forces a rescan.
+    @GET("api/library")
+    suspend fun getLibrary(@Query("refresh") refresh: Int? = null): Response<LibraryResponse>
+
+    @GET("api/library/items/{id}")
+    suspend fun getLibraryItem(@Path("id") id: String): Response<LibraryItem>
+
+    // Deletes the files and the matching torrent; refused for non-media folders.
+    @DELETE("api/library/items/{id}")
+    suspend fun deleteLibraryItem(@Path("id") id: String): Response<LibraryDeleteResponse>
+
+    @POST("api/library/cleanup")
+    suspend fun cleanupLibrary(): Response<LibraryCleanupResponse>
 }

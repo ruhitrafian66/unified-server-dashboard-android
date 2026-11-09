@@ -9,13 +9,13 @@ open class ShowsRepository @Inject constructor(
     private val preferencesManager: PreferencesManager
 ) {
 
-    suspend fun getShows(): Result<List<Show>> = apiResult {
+    open suspend fun getShows(): Result<List<Show>> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getShows()
         if (response.isSuccessful) {
             response.body()?.shows ?: emptyList()
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
     }
 
@@ -27,7 +27,7 @@ open class ShowsRepository @Inject constructor(
                 check(it.success) { it.message ?: "Server rejected adding the show." }
             }
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
     }
 
@@ -43,7 +43,7 @@ open class ShowsRepository @Inject constructor(
         response.requireSuccess()
     }
 
-    suspend fun checkEpisodes(): Result<CheckEpisodesResponse> = apiResult {
+    open suspend fun checkEpisodes(): Result<CheckEpisodesResponse> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.checkEpisodes()
         if (response.isSuccessful) {
@@ -51,8 +51,12 @@ open class ShowsRepository @Inject constructor(
                 check(it.success) { it.message.ifBlank { "Server rejected the episode check." } }
             }
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
+    }
+
+    open suspend fun getCheckStatus(): Result<CheckStatusResponse> = apiResult {
+        buildApiService(preferencesManager).getCheckStatus().bodyOr { CheckStatusResponse() }
     }
 
     open suspend fun getAutoCheckConfig(): Result<AutoCheckConfig> = apiResult {
@@ -61,7 +65,7 @@ open class ShowsRepository @Inject constructor(
         if (response.isSuccessful) {
             response.body() ?: AutoCheckConfig()
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
     }
 
@@ -77,7 +81,7 @@ open class ShowsRepository @Inject constructor(
         if (response.isSuccessful) {
             response.body() ?: QueueStatusResponse()
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
     }
 
@@ -89,7 +93,7 @@ open class ShowsRepository @Inject constructor(
                 check(it.success) { it.message ?: "Server rejected clearing the queue." }
             }
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
     }
 
@@ -99,7 +103,7 @@ open class ShowsRepository @Inject constructor(
         if (response.isSuccessful) {
             response.body()?.results ?: emptyList()
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
     }
 
@@ -109,7 +113,7 @@ open class ShowsRepository @Inject constructor(
         if (response.isSuccessful) {
             response.body() ?: TmdbConfig()
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
     }
 
@@ -127,7 +131,7 @@ open class ShowsRepository @Inject constructor(
                 check(it.success) { it.message ?: "Server rejected the season download." }
             }
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
     }
 
@@ -137,7 +141,7 @@ open class ShowsRepository @Inject constructor(
         if (response.isSuccessful) {
             response.body() ?: DownloadProgressResponse()
         } else {
-            throw Exception("HTTP ${response.code()}: ${response.message()}")
+            throw response.httpFailure()
         }
     }
 }

@@ -8,7 +8,10 @@ data class HealthResponse(
     val status: String = "unknown",
     val timestamp: String? = null,
     val platform: String? = null,
-    val nodeVersion: String? = null
+    val nodeVersion: String? = null,
+    val uptime: Long? = null,
+    /** Short SHA of the backend build that is running. */
+    val commit: String? = null
 )
 
 // ─── Torrent ──────────────────────────────────────────────────────────────────
@@ -33,22 +36,20 @@ data class Torrent(
 
 data class AddTorrentRequest(val urls: String)
 
-data class AddTorrentAdvancedRequest(
-    val urls: String,
-    val savepath: String,
-    val category: String? = null
-)
-
 data class TorrentActionRequest(
     val hashes: String,
     val deleteFiles: Boolean = false
 )
 
+/**
+ * Seeding limits, stored in qBittorrent's own preferences by the backend.
+ * A null limit is off. Enabled with both limits off means "stop as soon as complete".
+ */
 data class AutoStopConfig(
     val enabled: Boolean = false,
-    @SerializedName("delayMinutes") val seedingTimeLimit: Int = 0,
-    @SerializedName("ratioLimit") val ratioLimit: Float? = null,
-    @SerializedName("seedTimeLimit") val seedTimeLimit: Int? = null
+    /** Minutes to keep seeding after completion. */
+    val seedTimeLimit: Int? = null,
+    val ratioLimit: Float? = null
 )
 
 // ─── Search ──────────────────────────────────────────────────────────────────
@@ -86,42 +87,61 @@ data class SearchResultsResponse(
 
 data class SearchStopRequest(val id: Int)
 
-// ─── OMV / System ────────────────────────────────────────────────────────────
-// The backend returns flat string values from shell commands
+// ─── System overview (/api/system/overview) ──────────────────────────────────
+// One call per poll; sections that failed on the server are listed in `errors`.
 
-data class SystemInfo(
-    // Raw string values from the backend (e.g. "2.1" for CPU, "512/1024 MB (50.00%)" for memory)
-    val cpu: String = "",
-    val memory: String = "",
-    val disk: String = "",
-    val uptime: String = ""
+data class SystemOverview(
+    val timestamp: String? = null,
+    val cpu: CpuNow? = null,
+    val memory: MemoryUsage? = null,
+    val uptime: Long? = null,
+    val load: List<Float>? = null,
+    val temperature: Float? = null,
+    val disks: OverviewDisks? = null,
+    val services: List<ServiceStatus>? = null,
+    val containers: List<DockerContainer>? = null,
+    val torrentClient: TorrentClientStatus? = null,
+    val deploy: DeployInfo? = null,
+    val errors: Map<String, String>? = null
 )
 
-data class ServicesResponse(
-    val services: List<ServiceStatus> = emptyList()
+data class CpuNow(val percent: Float? = null, val cores: Int? = null)
+
+data class MemoryUsage(
+    val total: Long = 0,
+    val used: Long = 0,
+    val percent: Float = 0f,
+    val swapUsed: Long = 0,
+    val swapTotal: Long = 0
 )
+
+data class OverviewDisks(val root: DiskUsage? = null, val storage: DiskUsage? = null)
+
+data class DiskUsage(
+    val mountPoint: String = "",
+    val size: Long = 0,
+    val used: Long = 0,
+    val available: Long = 0,
+    val percent: Float = 0f
+)
+
+data class TorrentClientStatus(
+    val url: String? = null,
+    /** connected | firewalled | disconnected */
+    val connection: String = "",
+    val dhtNodes: Int = 0,
+    val dlSpeed: Long = 0,
+    val upSpeed: Long = 0
+)
+
+data class DeployInfo(val commit: String? = null, val startedAt: String? = null, val node: String? = null)
 
 data class ServiceStatus(
     val service: String = "",
-    val status: String = "inactive"
+    val status: String = "inactive",
+    val sub: String? = null
 ) {
     val running: Boolean get() = status == "active"
-}
-
-data class DisksResponse(
-    val disks: List<DiskDevice> = emptyList()
-)
-
-data class DiskDevice(
-    val device: String = "",
-    val size: String = "",
-    val used: String = "",
-    val available: String = "",
-    @SerializedName("usePercent") val usePercent: String = "0%",
-    val mountPoint: String = ""
-) {
-    val usedPercent: Float
-        get() = usePercent.removeSuffix("%").toFloatOrNull() ?: 0f
 }
 
 // ─── CPU Monitoring ──────────────────────────────────────────────────────────
@@ -159,16 +179,14 @@ data class CpuMetricsResponse(
 
 // ─── Docker ──────────────────────────────────────────────────────────────────
 
-data class DockerContainersResponse(
-    val containers: List<DockerContainer> = emptyList()
-)
-
 data class DockerContainer(
     val name: String = "",
     val state: String = "",
     val status: String = "",
     val image: String = "",
-    val running: Boolean = false
+    val running: Boolean = false,
+    /** From the container health check; null when it has none. */
+    val healthy: Boolean? = null
 )
 
 // ─── TV Shows ─────────────────────────────────────────────────────────────────
@@ -183,12 +201,30 @@ data class Show(
     val dateAdded: String? = null,
     val lastChecked: String? = null,
     val downloadedEpisodes: List<Any> = emptyList(),
+    /** Aired episodes not found within the server's retry window; search these manually. */
+    val missedEpisodes: List<EpisodeRef>? = null,
+    /** An aired episode the server is still retrying. */
+    val pendingEpisode: EpisodeRef? = null,
     val tmdbId: Int? = null,
     val tmdbName: String? = null,
     val tmdbOverview: String? = null,
     val firstAirDate: String? = null,
+    val posterPath: String? = null,
     val nextEpisodeAirDate: String? = null
 )
+
+data class EpisodeRef(
+    val season: Int = 0,
+    val episode: Int = 0,
+    val airDate: String? = null,
+    val lastTried: String? = null,
+    val tries: Int = 0
+) {
+    val code: String get() = episodeCode(season, episode)
+}
+
+fun episodeCode(season: Int, episode: Int) =
+    "S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}"
 
 data class ShowsResponse(
     val shows: List<Show> = emptyList()
@@ -262,6 +298,8 @@ data class DownloadProgressResponse(
 data class AutoCheckConfig(
     val enabled: Boolean = false,
     val scheduledChecks: Int = 0,
+    val sweepIntervalHours: Int? = null,
+    val retryWindowDays: Int? = null,
     val type: String = "targeted"
 )
 
@@ -292,10 +330,27 @@ data class ClearQueueResponse(
     val clearedCount: Int = 0
 )
 
+/** POST /api/shows/check starts a background sweep; poll [CheckStatusResponse] for the outcome. */
 data class CheckEpisodesResponse(
     val success: Boolean = false,
-    val message: String = "",
-    val downloads: List<Any> = emptyList()
+    val started: Boolean = false,
+    val running: Boolean = false,
+    val message: String = ""
+)
+
+data class CheckStatusResponse(
+    val running: Boolean = false,
+    val lastSweep: SweepSummary? = null,
+    val inFlight: Int = 0
+)
+
+data class SweepSummary(
+    val at: String? = null,
+    val reason: String? = null,
+    val checked: Int = 0,
+    val downloads: List<Any> = emptyList(),
+    val missed: List<Any> = emptyList(),
+    val errors: List<Any> = emptyList()
 )
 
 data class ApiResponse<T>(
@@ -305,7 +360,7 @@ data class ApiResponse<T>(
     val error: String? = null
 )
 
-// ─── Media Discovery (TMDB direct API) ───────────────────────────────────────
+// ─── Media Discovery (TMDB, proxied by the backend at /api/tmdb) ───────────────────────────────────────
 
 data class TmdbMediaItem(
     val id: Int = 0,
@@ -334,6 +389,15 @@ data class TmdbTrendingResponse(
     val results: List<TmdbMediaItem> = emptyList(),
     @SerializedName("total_pages") val totalPages: Int = 1,
     @SerializedName("total_results") val totalResults: Int = 0
+)
+
+/** GET /api/tmdb/movies/streaming: films with a recent digital release. */
+data class TmdbDiscoverResponse(
+    val page: Int = 1,
+    val results: List<TmdbMediaItem> = emptyList(),
+    @SerializedName("total_pages") val totalPages: Int = 1,
+    @SerializedName("total_results") val totalResults: Int = 0,
+    val windowDays: Int? = null
 )
 
 data class TmdbSearchMultiResponse(
@@ -411,3 +475,81 @@ data class ImdbRatingResponse(
     @SerializedName("Type") val type: String = "",
     @SerializedName("Response") val response: String = "False"
 )
+
+// ─── Media library (/api/library) ────────────────────────────────────────────
+// One item per top-level entry of the server's download folder.
+
+data class LibraryResponse(
+    val root: String? = null,
+    val scannedAt: String? = null,
+    /** False when qBittorrent was unreachable during the scan (no torrent status). */
+    val torrentsAvailable: Boolean = true,
+    val disk: LibraryDisk? = null,
+    val items: List<LibraryItem> = emptyList(),
+    val junk: JunkSummary = JunkSummary()
+)
+
+data class LibraryDisk(val size: Long = 0, val available: Long = 0, val used: Long = 0) {
+    val percent: Float get() = if (used + available > 0) used * 100f / (used + available) else 0f
+}
+
+data class JunkSummary(val count: Int = 0, val size: Long = 0, val items: List<JunkItem> = emptyList())
+
+data class JunkItem(val name: String = "", val size: Long = 0, val reason: String? = null)
+
+data class LibraryItem(
+    val id: String = "",
+    /** Name on disk. */
+    val name: String = "",
+    val isFile: Boolean = false,
+    val size: Long = 0,
+    val modified: String? = null,
+    val fileCount: Int = 0,
+    /** movie | tv | leftover (release folder without video) | other (not media, read-only) */
+    val kind: String = "other",
+    val title: String = "",
+    val year: Int? = null,
+    val quality: List<String> = emptyList(),
+    /** List response only. */
+    val seasonNumbers: List<Int>? = null,
+    /** Detail response only. */
+    val seasons: List<LibrarySeason>? = null,
+    val episodeCount: Int = 0,
+    /** Seasons the release name promises that are not on disk. */
+    val missingSeasons: List<Int> = emptyList(),
+    val extrasCount: Int? = null,
+    val extras: List<LibraryFile>? = null,
+    val subtitles: Int = 0,
+    val videoCount: Int = 0,
+    val mainFile: LibraryFile? = null,
+    val torrent: LibraryTorrent? = null,
+    val deletable: Boolean = false,
+    /** Ids of other copies of the same title. */
+    val duplicateOf: List<String> = emptyList(),
+    val poster: String? = null,
+    val tmdbId: Int? = null
+) {
+    val isMedia: Boolean get() = kind == "movie" || kind == "tv"
+    val displayTitle: String get() = if (isMedia) title.ifBlank { name } else name
+    val posterUrl: String? get() = poster?.let { "https://image.tmdb.org/t/p/w185$it" }
+    val allSeasonNumbers: List<Int> get() = seasonNumbers ?: seasons?.map { it.season }.orEmpty()
+}
+
+data class LibrarySeason(val season: Int = 0, val episodes: List<LibraryEpisode> = emptyList(), val size: Long = 0)
+
+data class LibraryEpisode(val episode: Int = 0, val file: String = "", val size: Long = 0)
+
+data class LibraryFile(val file: String = "", val size: Long = 0)
+
+data class LibraryTorrent(
+    val hash: String = "",
+    val state: String = "",
+    val progress: Float = 0f,
+    val ratio: Float = 0f,
+    val dlspeed: Long = 0,
+    val eta: Long = 0
+)
+
+data class LibraryDeleteResponse(val success: Boolean = false, val freed: Long = 0, val removedTorrent: Boolean = false)
+
+data class LibraryCleanupResponse(val success: Boolean = false, val removed: Int = 0, val freed: Long = 0)

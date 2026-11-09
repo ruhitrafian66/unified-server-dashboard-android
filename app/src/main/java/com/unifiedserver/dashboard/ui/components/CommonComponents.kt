@@ -216,26 +216,6 @@ fun LinearProgressCard(
     }
 }
 
-// Deprecated: use formatBytes from FormatUtils instead
-fun formatBytes(bytes: Long): String {
-    return com.unifiedserver.dashboard.ui.utils.formatBytes(bytes)
-}
-
-// Deprecated: use formatSpeed from FormatUtils instead
-fun formatSpeed(bytesPerSec: Long): String {
-    return com.unifiedserver.dashboard.ui.utils.formatSpeed(bytesPerSec)
-}
-
-// Deprecated: use formatEta from FormatUtils instead
-fun formatEta(seconds: Long): String {
-    return com.unifiedserver.dashboard.ui.utils.formatEta(seconds)
-}
-
-// Deprecated: use formatUptime from FormatUtils instead
-fun formatUptime(seconds: Long): String {
-    return com.unifiedserver.dashboard.ui.utils.formatUptime(seconds)
-}
-
 @Composable
 fun CpuGraphCard(
     currentUsage: Float,

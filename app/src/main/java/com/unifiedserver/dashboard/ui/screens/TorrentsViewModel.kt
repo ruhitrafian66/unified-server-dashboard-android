@@ -3,7 +3,6 @@ package com.unifiedserver.dashboard.ui.screens
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.unifiedserver.dashboard.data.models.SearchResult
-import com.unifiedserver.dashboard.data.models.Torrent
 import com.unifiedserver.dashboard.data.repository.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.*
@@ -13,7 +12,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
-enum class TorrentSortOption { NAME, SIZE, SEEDS, DATE_ADDED, PROGRESS, RATIO, SPEED_DOWN, SPEED_UP }
+enum class TorrentSortOption { SEEDS, SIZE, NAME }
 enum class SortOrder { ASCENDING, DESCENDING }
 enum class DownloadStage { SEARCHING, SELECTING, ADDING, SUCCEEDED, FAILED, CANCELLED }
 
@@ -25,16 +24,11 @@ data class DownloadOperation(
     val canRetry: Boolean = true
 )
 
+/** Torrent search (Media › Torrents): manual source selection, automatic pick, and magnet links. */
 data class TorrentsUiState(
-    val isLoading: Boolean = false,
-    val error: String? = null,
-    val lastUpdated: Long? = null,
-    val torrents: List<Torrent> = emptyList(),
     val snackbarMessage: String? = null,
     val isMutating: Boolean = false,
     val operation: DownloadOperation? = null,
-    val torrentSortOption: TorrentSortOption = TorrentSortOption.DATE_ADDED,
-    val torrentSortOrder: SortOrder = SortOrder.DESCENDING,
     val isSearching: Boolean = false,
     val searchQuery: String = "",
     val searchId: Int? = null,
@@ -49,34 +43,18 @@ data class TorrentsUiState(
 )
 
 @HiltViewModel
-class TorrentsViewModel @Inject constructor(private val repository: TorrentRepository) : ViewModel() {
+class TorrentsViewModel @Inject constructor(
+    private val repository: TorrentRepository,
+    private val downloads: DownloadsMonitor
+) : ViewModel() {
     private val _uiState = MutableStateFlow(TorrentsUiState())
     val uiState = _uiState.asStateFlow()
     private var searchJob: Job? = null
     private var moreJob: Job? = null
-    private var refreshJob: Job? = null
     private var generation = 0
     private val mutations = Mutex()
 
-    fun loadTorrents(silent: Boolean = false) {
-        if (refreshJob?.isActive == true) return
-        refreshJob = viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = !silent)
-            repository.getTorrents().onSuccess {
-                _uiState.value = _uiState.value.copy(isLoading = false, torrents = it,
-                    error = null, lastUpdated = System.currentTimeMillis())
-            }.onFailure {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = it.message ?: "Could not refresh downloads.")
-            }
-        }
-    }
-
     fun addTorrent(url: String, onAdded: () -> Unit = {}) = mutate("Download added", onAdded) { repository.addTorrent(url) }
-    fun pauseTorrent(hash: String) = mutate("Download paused") { repository.pauseTorrents(hash) }
-    fun resumeTorrent(hash: String) = mutate("Download resumed") { repository.resumeTorrents(hash) }
-    fun deleteTorrent(hash: String, deleteFiles: Boolean = false) = mutate("Download removed") {
-        repository.deleteTorrents(hash, deleteFiles)
-    }
 
     private fun mutate(message: String, onSuccess: () -> Unit = {}, block: suspend () -> Result<Unit>) {
         if (_uiState.value.isMutating) return
@@ -88,7 +66,7 @@ class TorrentsViewModel @Inject constructor(private val repository: TorrentRepos
                     block().onSuccess {
                         _uiState.value = _uiState.value.copy(snackbarMessage = message)
                         onSuccess()
-                        loadTorrents(silent = true)
+                        downloads.refresh()
                     }.onFailure {
                         _uiState.value = _uiState.value.copy(snackbarMessage = it.message ?: "Action could not be confirmed. Refresh before retrying.")
                     }
@@ -147,7 +125,7 @@ class TorrentsViewModel @Inject constructor(private val repository: TorrentRepos
                                 repository.addTorrent(source.fileUrl).getOrThrow()
                                 update(token) { it.copy(operation = DownloadOperation(request, DownloadStage.SUCCEEDED,
                                     "Download added", source, canRetry = false), snackbarMessage = "Download added") }
-                                loadTorrents(silent = true)
+                                downloads.refresh()
                             } finally {
                                 update(token) { it.copy(isMutating = false) }
                             }
@@ -258,39 +236,19 @@ class TorrentsViewModel @Inject constructor(private val repository: TorrentRepos
     }
 
     fun clearSnackbar() { _uiState.value = _uiState.value.copy(snackbarMessage = null) }
-    fun refresh() = loadTorrents()
-    fun setTorrentSort(option: TorrentSortOption) {
-        _uiState.value = _uiState.value.copy(torrentSortOption = option,
-            torrentSortOrder = nextOrder(option == _uiState.value.torrentSortOption, _uiState.value.torrentSortOrder))
-    }
     fun setSearchResultsSort(option: TorrentSortOption) {
         _uiState.value = _uiState.value.copy(searchResultsSortOption = option,
             searchResultsSortOrder = nextOrder(option == _uiState.value.searchResultsSortOption, _uiState.value.searchResultsSortOrder))
     }
     private fun nextOrder(same: Boolean, old: SortOrder) =
         if (same && old == SortOrder.DESCENDING) SortOrder.ASCENDING else SortOrder.DESCENDING
-    fun getSortedTorrents() = sortTorrents(_uiState.value.torrents, _uiState.value.torrentSortOption, _uiState.value.torrentSortOrder)
     fun getSortedSearchResults(): List<SearchResult> {
         val state = _uiState.value
         val sorted = when (state.searchResultsSortOption) {
             TorrentSortOption.NAME -> state.searchResults.sortedBy { it.fileName.lowercase() }
             TorrentSortOption.SIZE -> state.searchResults.sortedBy { it.fileSize }
-            else -> state.searchResults.sortedBy { it.nbSeeders }
+            TorrentSortOption.SEEDS -> state.searchResults.sortedBy { it.nbSeeders }
         }
         return if (state.searchResultsSortOrder == SortOrder.DESCENDING) sorted.reversed() else sorted
     }
-}
-
-internal fun sortTorrents(items: List<Torrent>, option: TorrentSortOption, order: SortOrder): List<Torrent> {
-    val sorted = when (option) {
-        TorrentSortOption.NAME -> items.sortedBy { it.name.lowercase() }
-        TorrentSortOption.SIZE -> items.sortedBy { it.size }
-        TorrentSortOption.SEEDS -> items.sortedBy { it.num_seeds }
-        TorrentSortOption.DATE_ADDED -> items.sortedBy { it.addedOn }
-        TorrentSortOption.PROGRESS -> items.sortedBy { it.progress }
-        TorrentSortOption.RATIO -> items.sortedBy { it.ratio }
-        TorrentSortOption.SPEED_DOWN -> items.sortedBy { it.dlspeed }
-        TorrentSortOption.SPEED_UP -> items.sortedBy { it.upspeed }
-    }
-    return if (order == SortOrder.DESCENDING) sorted.reversed() else sorted
 }

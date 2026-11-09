@@ -16,8 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.unifiedserver.dashboard.data.models.SystemInfo
-import com.unifiedserver.dashboard.data.models.DiskDevice
 import com.unifiedserver.dashboard.ui.components.*
 import com.unifiedserver.dashboard.ui.theme.*
 
@@ -27,7 +25,7 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val openDownloads = com.unifiedserver.dashboard.ui.navigation.LocalOpenDownloads.current
+    val openStorage = com.unifiedserver.dashboard.ui.navigation.LocalOpenStorage.current
     RefreshWhileVisible(10_000) { viewModel.loadData(silent = uiState.health != null) }
 
     Scaffold(
@@ -71,154 +69,30 @@ fun DashboardScreen(
                         )
                     }
 
-                    // Quick stats
-                    item { SectionHeader("Quick Stats") }
-                    item {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            item {
-                                StatCard(
-                                    title = "Total",
-                                    value = uiState.torrents.size.toString(),
-                                    subtitle = "torrents",
-                                    color = Primary,
-                                    modifier = Modifier.width(140.dp)
-                                )
-                            }
-                            item {
-                                StatCard(
-                                    title = "Downloading",
-                                    value = uiState.torrents.count {
-                                        it.state.equals("downloading", ignoreCase = true)
-                                    }.toString(),
-                                    color = StateDownloading,
-                                    modifier = Modifier.width(140.dp)
-                                )
-                            }
-                            item {
-                                StatCard(
-                                    title = "Seeding",
-                                    value = uiState.torrents.count {
-                                        it.state.equals("uploading", ignoreCase = true)
-                                    }.toString(),
-                                    color = StateUploading,
-                                    modifier = Modifier.width(140.dp)
-                                )
-                            }
-                            item {
-                                StatCard(
-                                    title = "Paused",
-                                    value = uiState.torrents.count {
-                                        it.state.contains("paused", ignoreCase = true)
-                                    }.toString(),
-                                    color = StatePaused,
-                                    modifier = Modifier.width(140.dp)
-                                )
+                    uiState.overview?.let { overview ->
+                        unavailableSections(overview).takeIf { it.isNotEmpty() }?.let { missing ->
+                            item { InlineWarning("Some data is unavailable: ${missing.joinToString()}.") }
+                        }
+                        item { SectionHeader("System", modifier = Modifier.padding(top = 8.dp)) }
+                        item { ResourceTiles(overview) }
+                        systemDiskWarning(overview)?.let { warning ->
+                            item { InlineWarning(warning, Modifier.padding(top = 8.dp)) }
+                        }
+                        item {
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 8.dp, end = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                SectionHeader("Downloads & VPN")
+                                TextButton(onClick = openStorage) { Text("Storage") }
                             }
                         }
+                        item { DownloadsAndVpnRows(overview) }
                     }
 
-                    // System info (flat strings from backend)
-                    uiState.systemInfo?.let { info ->
-                        item {
-                            SectionHeader(
-                                title = "System",
-                                modifier = Modifier.padding(top = 8.dp)
-                            )
-                        }
-                        item {
-                            SystemInfoCards(info = info, disks = uiState.disks)
-                        }
-                    }
-
-                    // Active torrents preview
-                    if (uiState.torrents.isNotEmpty()) {
-                        item {
-                            SectionHeader(
-                                title = "Active Torrents",
-                                modifier = Modifier.padding(top = 8.dp)
-                            )
-                        }
-                        val active = uiState.torrents
-                            .filter { it.state.equals("downloading", ignoreCase = true) || it.state.equals("uploading", ignoreCase = true) }
-                            .take(5)
-                            .ifEmpty { uiState.torrents.take(3) }
-                        items(active) { torrent ->
-                            TorrentCard(
-                                torrent = torrent,
-                                onPause = openDownloads,
-                                onResume = openDownloads,
-                                readOnly = true,
-                                onOpen = openDownloads
-                            )
-                        }
-                    }
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun SystemInfoCards(info: SystemInfo, disks: List<DiskDevice> = emptyList()) {
-    Column(
-        modifier = Modifier.padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // CPU
-        if (info.cpu.isNotBlank()) {
-            SystemInfoRow(label = "CPU", value = "${info.cpu}%")
-        }
-        // Memory: format from backend is "512/1024 MB (50.00%)"
-        if (info.memory.isNotBlank()) {
-            SystemInfoRow(label = "Memory", value = info.memory)
-        }
-        // Disk: prioritize external SSDs/storage over boot drive (mmcblk0)
-        if (disks.isNotEmpty()) {
-            val ssdDisk = com.unifiedserver.dashboard.ui.utils.orderedDisks(disks).firstOrNull()
-            
-            if (ssdDisk != null) {
-                SystemInfoRow(
-                    label = "Disk (${ssdDisk.device})",
-                    value = "${ssdDisk.used}/${ssdDisk.size} (${ssdDisk.usePercent})"
-                )
-            }
-        } else if (info.disk.isNotBlank()) {
-            SystemInfoRow(label = "Disk (root)", value = info.disk)
-        }
-        // Uptime
-        if (info.uptime.isNotBlank()) {
-            SystemInfoRow(label = "Uptime", value = info.uptime)
-        }
-    }
-}
-
-@Composable
-fun SystemInfoRow(label: String, value: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Surface),
-        shape = RoundedCornerShape(10.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium,
-                color = OnSurface
-            )
         }
     }
 }

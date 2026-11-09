@@ -18,9 +18,6 @@ fun formatBytes(bytes: Long): String {
     return "%.1f %s".format(bytes / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups.coerceAtMost(4)])
 }
 
-fun orderedDisks(disks: List<com.unifiedserver.dashboard.data.models.DiskDevice>) =
-    disks.sortedWith(compareBy({ it.mountPoint == "/" || it.mountPoint.startsWith("/boot") }, { it.mountPoint }))
-
 /**
  * Format bytes per second to speed string (B/s, KB/s, MB/s, etc.)
  */

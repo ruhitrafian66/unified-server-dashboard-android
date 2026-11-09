@@ -25,6 +25,14 @@ fun sourceResolution(name: String): Int {
     }
 }
 
+/**
+ * Fake "releases" that are really malware (e.g. "Show S01E04 1080p .exe") are common on
+ * public trackers. Same rule as the backend's TV automation: never pick these automatically.
+ */
+private val SUSPICIOUS_NAME = Regex("""\.(exe|scr|bat|cmd|msi|lnk|vbs|jar|apk|zip|rar|7z)\b|\bpassword\b""", RegexOption.IGNORE_CASE)
+
+fun isSuspiciousSourceName(fileName: String): Boolean = SUSPICIOUS_NAME.containsMatchIn(fileName)
+
 /** Conservative filename matching, not a guarantee about the file's actual contents. */
 fun selectBestSource(request: DownloadRequest, results: List<SearchResult>): SearchResult? {
     val title = words(request.title.orEmpty())
@@ -49,7 +57,8 @@ fun selectBestSource(request: DownloadRequest, results: List<SearchResult>): Sea
         val usableLink = candidate.fileUrl.toHttpUrlOrNull() != null ||
             (candidate.fileUrl.startsWith("magnet:?") &&
                 (candidate.fileUrl.contains("xt=urn:btih:") || candidate.fileUrl.contains("xt=urn:btmh:")))
-        titleMatches && identityMatches && usableLink && candidate.fileSize > 0 &&
+        titleMatches && identityMatches && usableLink && !isSuspiciousSourceName(candidate.fileName) &&
+            candidate.fileSize > 0 &&
             candidate.nbSeeders >= policy.minimumSeeders &&
             sourceResolution(candidate.fileName) >= policy.minimumResolution &&
             (policy.maximumBytes == null || candidate.fileSize <= policy.maximumBytes)

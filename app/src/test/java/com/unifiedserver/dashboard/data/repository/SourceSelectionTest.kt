@@ -55,4 +55,13 @@ class SourceSelectionTest {
     @Test fun missingIdentityMustUseManualSelection() {
         assertNull(selectBestSource(DownloadRequest("something", true), listOf(source("something 2024 1080p"))))
     }
+
+    @Test fun neverAutoPicksMalwareLookingReleases() {
+        val fake = source("Example Movie 2024 1080p .exe", 500)
+        val archive = source("Example.Movie.2024.1080p.rar password", 400)
+        val real = source("Example.Movie.2024.1080p.WEB", 5)
+        assertTrue(isSuspiciousSourceName(fake.fileName))
+        assertFalse(isSuspiciousSourceName(real.fileName))
+        assertEquals(real, selectBestSource(request, listOf(fake, archive, real)))
+    }
 }
