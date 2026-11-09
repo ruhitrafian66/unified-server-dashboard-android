@@ -40,3 +40,10 @@
 -dontwarn okio.**
 -dontwarn javax.annotation.**
 -keepnames class okhttp3.internal.publicsuffix.PublicSuffixDatabase
+
+# lifecycle-runtime-compose 2.8.x finds Compose UI 1.6's LocalLifecycleOwner by
+# reflection. Without this, minified release builds crash on launch with
+# "CompositionLocal LocalLifecycleOwner not present". Remove after moving to Compose UI 1.7+.
+-keep class androidx.compose.ui.platform.AndroidCompositionLocals_androidKt {
+    *** getLocalLifecycleOwner();
+}
