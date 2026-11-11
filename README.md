@@ -63,8 +63,9 @@ arrive when F-Droid refreshes; pull to refresh to check immediately.
   detection, junk cleanup and delete (which also removes the torrent).
 - **Downloads bar**: shown above the navigation while torrents download; cycles
   through several (paused while touched); tap to stop, start or remove.
-- **Server**: resources, temperature, media and system storage, VPN and qBittorrent
-  status, services, containers and confirmed power actions.
+- **Server**: resources, CPU and temperature history (6 hours to 4 days), one storage
+  bar per physical disk as the server detects it (e.g. "USB SSD · System + Media"),
+  VPN and qBittorrent status, services, containers and confirmed power actions.
 - **Settings**: accessible from screen toolbars; server URLs are tested before saving.
 
 “Find sources” is always manual: it passes the title/year (or title/season) to
@@ -87,7 +88,7 @@ check the downloads bar first if the network outcome is uncertain.
 Settings and Tracked shows share one server-confirmed automation snapshot.
 Failed refreshes retain known values and expose retry without changing them.
 
-The app targets the backend's current API (unified-server-dashboard `7474439`):
+The app targets the backend's current API (unified-server-dashboard `befc6ea`):
 every write sends `X-Requested-With: dashboard` (the backend's CSRF guard), and
 Home/Server read one `/api/system/overview` call that tolerates partial failures.
 
@@ -98,8 +99,8 @@ Movies lists films newly out on digital/streaming, not cinema-only trending.
 An optional personal OMDb key enables IMDb ratings; it is held in the app's
 private preferences. Request bodies are not logged. Configure only a trusted
 backend. This repository does not establish or audit backend authentication.
-HTTPS is the default; the network-security XML has explicit legacy local-host
-HTTP exceptions, not a private-network wildcard.
+HTTPS is the default; the network-security XML allows plain HTTP only for explicit
+local hosts and mDNS `.local` names (such as `dash.local`), not a private-network wildcard.
 
 ## Validation
 

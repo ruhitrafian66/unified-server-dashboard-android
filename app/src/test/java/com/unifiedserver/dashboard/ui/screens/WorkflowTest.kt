@@ -6,6 +6,12 @@ import com.unifiedserver.dashboard.MemoryStore
 import com.unifiedserver.dashboard.data.PreferencesManager
 import com.unifiedserver.dashboard.data.models.*
 import com.unifiedserver.dashboard.data.repository.*
+import com.unifiedserver.dashboard.ui.components.diskWarnings
+import com.unifiedserver.dashboard.ui.components.mediaVolume
+import com.unifiedserver.dashboard.ui.components.overviewVolumes
+import com.unifiedserver.dashboard.ui.components.volumeDetail
+import com.unifiedserver.dashboard.ui.components.volumeTitle
+import com.unifiedserver.dashboard.ui.utils.formatBytes
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.*
@@ -229,17 +235,46 @@ class WorkflowTest {
         vm.viewModelScope.cancel()
     }
 
-    @Test fun storageListsMediaFirstAndWarnsOnlyForFullSeparateSystemDisk() {
+    @Test fun olderServersWithoutVolumesFallBackToRootAndMediaReadings() {
         val root = DiskUsage(mountPoint = "/", size = 100, used = 90, available = 10, percent = 90f)
         val media = DiskUsage(mountPoint = "/mnt/storage", size = 1000, used = 100, available = 900, percent = 10f)
         val overview = SystemOverview(disks = OverviewDisks(root = root, storage = media))
-        assertEquals(listOf("Media storage" to media, "System disk" to root),
-            com.unifiedserver.dashboard.ui.components.overviewDisks(overview))
-        assertNotNull(com.unifiedserver.dashboard.ui.components.systemDiskWarning(overview))
-        // Same mount (no separate SSD): show it once, no SD-card warning.
+        val volumes = overviewVolumes(overview)
+        assertEquals(listOf("Disk · Media", "Disk · System"), volumes.map(::volumeTitle))
+        assertEquals("storage", mediaVolume(volumes)!!.id)
+        assertEquals(listOf("System disk is 90% full — ${formatBytes(10)} left."), diskWarnings(overview))
+        // Same mount for both: show it once.
         val single = SystemOverview(disks = OverviewDisks(root = root, storage = root))
-        assertEquals(1, com.unifiedserver.dashboard.ui.components.overviewDisks(single).size)
-        assertNull(com.unifiedserver.dashboard.ui.components.systemDiskWarning(single))
+        assertEquals(1, overviewVolumes(single).size)
+    }
+
+    @Test fun volumesAreShownAsTheServerDetectedThem() {
+        val gb = 1024L * 1024 * 1024
+        val ssd = DiskVolume(id = "2049", device = "/dev/sda1", kind = "USB SSD", model = "B SATA SSD",
+            mounts = listOf("/", "/mnt/storage"), roles = listOf("System", "Media"),
+            size = 228 * gb, used = 200 * gb, available = 20 * gb, reserved = 5 * gb, percent = 90.9f)
+        val sd = DiskVolume(id = "45825", device = "/dev/mmcblk1p1", kind = "SD card", mounts = listOf("/boot"),
+            roles = listOf("Boot"), size = gb, used = gb - 1, available = 1, percent = 99f)
+        // The legacy readings describe the same SSD twice; volumes win.
+        val reading = DiskUsage(mountPoint = "/", size = 228 * gb, percent = 90.9f)
+        val overview = SystemOverview(disks = OverviewDisks(root = reading,
+            storage = reading.copy(mountPoint = "/mnt/storage"), volumes = listOf(ssd, sd)))
+
+        val volumes = overviewVolumes(overview)
+        assertEquals(listOf("USB SSD · System + Media", "SD card · Boot"), volumes.map(::volumeTitle))
+        assertEquals("B SATA SSD · /dev/sda1 · /, /mnt/storage", volumeDetail(ssd))
+        assertEquals("/dev/mmcblk1p1 · /boot", volumeDetail(sd))
+        assertEquals(ssd, mediaVolume(volumes))
+        // A full boot partition is not worth a warning; the shared disk is, with its reserve.
+        assertEquals(listOf("The USB SSD holding both the system and your media is 91% full — ${formatBytes(20 * gb)} left. " +
+            "Downloads stop when it fills; system services keep a ${formatBytes(5 * gb)} reserve."), diskWarnings(overview))
+
+        val separate = overview.copy(disks = OverviewDisks(volumes = listOf(
+            ssd.copy(roles = listOf("Media"), percent = 86f), sd.copy(roles = listOf("System")))))
+        assertEquals(2, diskWarnings(separate).size)
+        assertTrue(diskWarnings(separate)[0].startsWith("Media storage (USB SSD) is 86% full"))
+        assertTrue(diskWarnings(separate)[1].startsWith("System disk (SD card) is 99% full"))
+        assertEquals("USB SSD", mediaVolume(overviewVolumes(separate))!!.kind)
     }
 
     @Test fun automaticDownloadRequiresSeparateConfirmationAndCarriesRules() = runTest {

@@ -15,7 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.unifiedserver.dashboard.data.models.DiskUsage
+import com.unifiedserver.dashboard.data.models.DiskVolume
 import com.unifiedserver.dashboard.data.models.DockerContainer
 import com.unifiedserver.dashboard.data.models.ServiceStatus
 import com.unifiedserver.dashboard.data.repository.HistoryMetric
@@ -95,12 +95,12 @@ fun SystemScreen(
                     }
 
                     overview?.let {
-                        val disks = overviewDisks(it)
-                        if (disks.isNotEmpty()) {
+                        val volumes = overviewVolumes(it)
+                        if (volumes.isNotEmpty()) {
                             item { SectionHeader("Storage", modifier = Modifier.padding(top = 8.dp)) }
-                            items(disks, key = { d -> d.first }) { (label, disk) -> DiskItem(label = label, disk = disk) }
+                            items(volumes, key = { v -> v.id }) { volume -> DiskItem(volume) }
                         }
-                        systemDiskWarning(it)?.let { warning -> item { InlineWarning(warning) } }
+                        items(diskWarnings(it)) { warning -> InlineWarning(warning) }
 
                         item { SectionHeader("Downloads & VPN", modifier = Modifier.padding(top = 8.dp)) }
                         item { DownloadsAndVpnRows(it) }
@@ -188,8 +188,9 @@ fun ServiceItem(service: ServiceStatus) {
     }
 }
 
+/** One bar per physical volume: what it is, what it holds, and how full it is. */
 @Composable
-fun DiskItem(label: String, disk: DiskUsage) {
+fun DiskItem(volume: DiskVolume) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -198,19 +199,17 @@ fun DiskItem(label: String, disk: DiskUsage) {
         shape = RoundedCornerShape(8.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(text = label, style = MaterialTheme.typography.bodyMedium, color = OnSurface)
+            val pct = volume.percent
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(volumeTitle(volume), style = MaterialTheme.typography.bodyMedium, color = OnSurface,
+                    modifier = Modifier.weight(1f))
                 Text(
-                    text = disk.mountPoint,
+                    text = "${pct.roundToInt()}% used",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (pct > 65f) levelColor(pct) else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            val pct = disk.percent
             LinearProgressIndicator(
                 progress = { (pct / 100f).coerceIn(0f, 1f) },
                 modifier = Modifier
@@ -220,20 +219,13 @@ fun DiskItem(label: String, disk: DiskUsage) {
                 trackColor = SurfaceVariant
             )
             Spacer(modifier = Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "${formatBytes(disk.available)} free of ${formatBytes(disk.size)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "${pct.roundToInt()}% used",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (pct > 65f) levelColor(pct) else MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Text(
+                text = "${formatBytes(volume.available)} free of ${formatBytes(volume.size)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            volumeDetail(volume).takeIf { it.isNotBlank() }?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

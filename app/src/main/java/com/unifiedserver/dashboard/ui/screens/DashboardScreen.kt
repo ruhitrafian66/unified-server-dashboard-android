@@ -69,9 +69,7 @@ fun DashboardScreen(
                         }
                         item { SectionHeader("System", modifier = Modifier.padding(top = 8.dp)) }
                         item { ResourceTiles(overview) }
-                        systemDiskWarning(overview)?.let { warning ->
-                            item { InlineWarning(warning, Modifier.padding(top = 8.dp)) }
-                        }
+                        items(diskWarnings(overview)) { warning -> InlineWarning(warning, Modifier.padding(top = 8.dp)) }
                         item {
                             Row(
                                 Modifier.fillMaxWidth().padding(top = 8.dp, end = 8.dp),

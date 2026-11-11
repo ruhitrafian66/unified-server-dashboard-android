@@ -9,7 +9,7 @@ import com.unifiedserver.dashboard.data.models.SystemOverview
 import com.unifiedserver.dashboard.data.repository.HistoryMetric
 import com.unifiedserver.dashboard.data.repository.SystemRepository
 import com.unifiedserver.dashboard.ui.components.HistoryRange
-import com.unifiedserver.dashboard.ui.components.downsample
+import com.unifiedserver.dashboard.ui.components.historyRuns
 import com.unifiedserver.dashboard.ui.components.historyStats
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -100,10 +100,30 @@ class MetricHistoryTest {
         assertEquals(49.5f, stats.average, 0.1f)
         assertNull(historyStats(emptyList()))
 
-        val small = downsample(samples, 360)
-        assertTrue(small.size <= 360)
-        assertEquals(samples.last(), small.last())
-        assertTrue(small.first().t < 60L * 16)
-        assertEquals(10, downsample(samples.take(10), 360).size)
+        val runs = historyRuns(samples, 360)
+        assertEquals(1, runs.size)
+        assertTrue(runs.single().size <= 362)
+        assertEquals(samples.last(), runs.single().last())
+        assertEquals(listOf(samples.take(10)), historyRuns(samples.take(10), 360))
+        assertTrue(historyRuns(emptyList(), 360).isEmpty())
+    }
+
+    @Test fun downtimeSplitsTheLineInsteadOfBridgingIt() {
+        // 20 minutes of samples, the server down for an hour, one stray sample, then 4 days.
+        val before = (0 until 20).map { HistorySample(it * 60L, 10f) }
+        val stray = HistorySample(before.last().t + 3600, 20f)
+        val after = (0 until 5760).map { HistorySample(stray.t + 3600 + it * 60L, 30f) }
+
+        val short = historyRuns(before + stray + after.take(20), 360)
+        assertEquals(listOf(20, 1, 20), short.map { it.size })
+
+        // Thinning must not merge runs, even though thinned points are more than 5 minutes apart.
+        val long = historyRuns(before + stray + after, 360)
+        assertEquals(3, long.size)
+        assertEquals(listOf(10f, 20f, 30f), long.map { it.last().v })
+        assertEquals(after.last(), long.last().last())
+        assertTrue(long.sumOf { it.size } <= 366)
+        // A gap of exactly 5 minutes is still one run.
+        assertEquals(1, historyRuns(listOf(HistorySample(0, 1f), HistorySample(300, 1f)), 360).size)
     }
 }

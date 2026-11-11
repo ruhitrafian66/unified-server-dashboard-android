@@ -70,16 +70,30 @@ fun historyStats(samples: List<HistorySample>): HistoryStats? {
     return HistoryStats(samples.last().v, samples.map { it.v }.average().toFloat(), samples.maxOf { it.v })
 }
 
+/** The server samples once a minute; a longer silence than this means it was down. */
+const val HISTORY_GAP_S = 5 * 60L
+
 /**
- * At most [maxPoints] points, averaged per bucket. 4 days is 5760 samples, far more than
- * a phone-width chart can show. The newest sample is kept as-is so the line ends on "now".
+ * The samples as drawable runs: split wherever more than [HISTORY_GAP_S] passed without
+ * data, so the chart never draws a line through downtime, then thinned to roughly
+ * [maxPoints] points in total by averaging (4 days is 5760 samples, far more than a
+ * phone-width chart can show). Each run keeps its newest sample as-is, so the last run
+ * ends on "now".
  */
-fun downsample(samples: List<HistorySample>, maxPoints: Int): List<HistorySample> {
-    if (samples.size <= maxPoints || maxPoints < 2) return samples
-    val size = (samples.size - 1 + maxPoints - 2) / (maxPoints - 1)
-    return samples.dropLast(1).chunked(size) { chunk ->
-        HistorySample(chunk.sumOf { it.t } / chunk.size, chunk.map { it.v }.average().toFloat())
-    } + samples.last()
+fun historyRuns(samples: List<HistorySample>, maxPoints: Int): List<List<HistorySample>> {
+    if (samples.isEmpty()) return emptyList()
+    val runs = mutableListOf(mutableListOf(samples.first()))
+    for (i in 1 until samples.size) {
+        if (samples[i].t - samples[i - 1].t > HISTORY_GAP_S) runs += mutableListOf<HistorySample>()
+        runs.last() += samples[i]
+    }
+    val perPoint = (samples.size + maxPoints - 1) / maxPoints.coerceAtLeast(1)
+    if (perPoint <= 1) return runs
+    return runs.map { run ->
+        run.dropLast(1).chunked(perPoint) { chunk ->
+            HistorySample(chunk.sumOf { it.t } / chunk.size, chunk.map { it.v }.average().toFloat())
+        } + run.last()
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -119,8 +133,8 @@ fun HistoryCard(
             Spacer(Modifier.height(8.dp))
             when {
                 samples.size >= 2 -> {
-                    val points = remember(samples) { downsample(samples, 360) }
-                    HistoryChart(scale, points, Modifier.fillMaxWidth().height(140.dp))
+                    val runs = remember(samples) { historyRuns(samples, 360) }
+                    HistoryChart(scale, runs, Modifier.fillMaxWidth().height(140.dp))
                     val time = if (range.hours > 24) DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
                         else DateFormat.getTimeInstance(DateFormat.SHORT)
                     Row(Modifier.fillMaxWidth().padding(start = 36.dp, top = 4.dp)) {
@@ -150,11 +164,13 @@ fun HistoryCard(
 }
 
 @Composable
-private fun HistoryChart(scale: HistoryScale, points: List<HistorySample>, modifier: Modifier) {
+private fun HistoryChart(scale: HistoryScale, runs: List<List<HistorySample>>, modifier: Modifier) {
     val measurer = rememberTextMeasurer()
     val labelStyle = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val first = runs.first().first()
+    val last = runs.last().last()
     Canvas(modifier.semantics {
-        contentDescription = "${scale.title} history, latest ${scale.value(points.last().v)}"
+        contentDescription = "${scale.title} history, latest ${scale.value(last.v)}"
     }) {
         val gutter = 36.dp.toPx()
         val top = 6.dp.toPx()
@@ -179,21 +195,29 @@ private fun HistoryChart(scale: HistoryScale, points: List<HistorySample>, modif
             )
         }
 
-        val start = points.first().t
-        val span = (points.last().t - start).coerceAtLeast(1L).toFloat()
-        val coords = points.map { Offset(gutter + width * ((it.t - start) / span), y(it.v)) }
-        val line = Path().apply {
-            moveTo(coords.first().x, coords.first().y)
-            coords.drop(1).forEach { lineTo(it.x, it.y) }
+        val span = (last.t - first.t).coerceAtLeast(1L).toFloat()
+        fun point(sample: HistorySample) = Offset(gutter + width * ((sample.t - first.t) / span), y(sample.v))
+        // One line per run: the space between runs is time the server recorded nothing.
+        for (run in runs) {
+            val coords = run.map(::point)
+            if (coords.size == 1) {
+                // A lone sample between two gaps.
+                drawCircle(bands(1f), radius = 1.5.dp.toPx(), center = coords.first())
+                continue
+            }
+            val line = Path().apply {
+                moveTo(coords.first().x, coords.first().y)
+                coords.drop(1).forEach { lineTo(it.x, it.y) }
+            }
+            val area = Path().apply {
+                addPath(line)
+                lineTo(coords.last().x, bottom)
+                lineTo(coords.first().x, bottom)
+                close()
+            }
+            drawPath(area, bands(0.15f))
+            drawPath(line, bands(1f), style = Stroke(width = 2.dp.toPx()))
         }
-        val area = Path().apply {
-            addPath(line)
-            lineTo(coords.last().x, bottom)
-            lineTo(coords.first().x, bottom)
-            close()
-        }
-        drawPath(area, bands(0.15f))
-        drawPath(line, bands(1f), style = Stroke(width = 2.dp.toPx()))
-        drawCircle(OnSurface, radius = 3.5.dp.toPx(), center = coords.last())
+        drawCircle(OnSurface, radius = 3.5.dp.toPx(), center = point(last))
     }
 }

@@ -115,7 +115,34 @@ data class MemoryUsage(
     val swapTotal: Long = 0
 )
 
-data class OverviewDisks(val root: DiskUsage? = null, val storage: DiskUsage? = null)
+data class OverviewDisks(
+    val root: DiskUsage? = null,
+    val storage: DiskUsage? = null,
+    /** Physical volumes as detected by the server; absent on backends before befc6ea. */
+    val volumes: List<DiskVolume>? = null
+)
+
+/**
+ * One filesystem and every role it serves: "/" and a bind-mounted media folder on the
+ * same partition are a single volume with roles System + Media.
+ */
+data class DiskVolume(
+    val id: String = "",
+    /** e.g. /dev/sda1 */
+    val device: String? = null,
+    /** "USB SSD", "SD card", "NVMe SSD", "eMMC", "HDD", or "Disk" when unknown. */
+    val kind: String = "Disk",
+    val model: String? = null,
+    val mounts: List<String> = emptyList(),
+    /** Any of System, Media, Boot. */
+    val roles: List<String> = emptyList(),
+    val size: Long = 0,
+    val used: Long = 0,
+    val available: Long = 0,
+    /** Bytes only root may use (ext4 keeps ~5%), so services survive a disk filled by downloads. */
+    val reserved: Long = 0,
+    val percent: Float = 0f
+)
 
 data class DiskUsage(
     val mountPoint: String = "",

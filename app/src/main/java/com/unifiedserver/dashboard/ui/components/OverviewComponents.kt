@@ -12,6 +12,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.unifiedserver.dashboard.data.models.DiskUsage
+import com.unifiedserver.dashboard.data.models.DiskVolume
 import com.unifiedserver.dashboard.data.models.DockerContainer
 import com.unifiedserver.dashboard.data.models.SystemOverview
 import com.unifiedserver.dashboard.data.models.TorrentClientStatus
@@ -56,29 +57,59 @@ fun vpnContainer(overview: SystemOverview): DockerContainer? =
 /** Human names for the sections the server could not read this time. */
 private val SECTION_NAMES = mapOf(
     "memory" to "memory", "uptime" to "uptime", "load" to "load", "rootDisk" to "system disk",
-    "storage" to "media storage", "services" to "services", "containers" to "containers",
+    "storage" to "media storage", "volumes" to "disk details", "services" to "services", "containers" to "containers",
     "torrentClient" to "qBittorrent"
 )
 
 fun unavailableSections(overview: SystemOverview): List<String> =
     overview.errors.orEmpty().keys.map { SECTION_NAMES[it] ?: it }
 
-/** Media storage first, then the system disk if it is a different mount. */
-fun overviewDisks(overview: SystemOverview): List<Pair<String, DiskUsage>> {
-    val storage = overview.disks?.storage
-    val root = overview.disks?.root
+/**
+ * Physical volumes as the server detected them. Older servers only send the root and
+ * media readings: those become one volume each (or one, if they are the same mount).
+ */
+fun overviewVolumes(overview: SystemOverview): List<DiskVolume> {
+    val disks = overview.disks ?: return emptyList()
+    disks.volumes?.takeIf { it.isNotEmpty() }?.let { return it }
+    fun DiskUsage.asVolume(id: String, role: String) =
+        DiskVolume(id = id, mounts = listOf(mountPoint), roles = listOf(role),
+            size = size, used = used, available = available, percent = percent)
     return buildList {
-        storage?.let { add("Media storage" to it) }
-        if (root != null && root.mountPoint != storage?.mountPoint) add("System disk" to root)
+        disks.storage?.let { add(it.asVolume("storage", "Media")) }
+        disks.root?.takeIf { it.mountPoint != disks.storage?.mountPoint }?.let { add(it.asVolume("root", "System")) }
     }
 }
 
-/** The system disk is usually the SD card on this server: warn before it fills up. */
-fun systemDiskWarning(overview: SystemOverview): String? {
-    val root = overview.disks?.root ?: return null
-    if (root.percent <= 85f || root.mountPoint == overview.disks.storage?.mountPoint) return null
-    return "System disk (SD card) is ${root.percent.roundToInt()}% full — ${formatBytes(root.available)} left."
-}
+private val DiskVolume.isSystem get() = "System" in roles
+private val DiskVolume.isMedia get() = "Media" in roles
+
+/** The volume downloads land on; on a single-disk server that is the system volume. */
+fun mediaVolume(volumes: List<DiskVolume>): DiskVolume? =
+    volumes.firstOrNull { it.isMedia } ?: volumes.firstOrNull { it.isSystem }
+
+/** "USB SSD · System + Media" */
+fun volumeTitle(volume: DiskVolume): String =
+    listOf(volume.kind, volume.roles.joinToString(" + ")).filter { it.isNotBlank() }.joinToString(" · ")
+
+/** "B SATA SSD · /dev/sda1 · /, /mnt/storage" */
+fun volumeDetail(volume: DiskVolume): String =
+    listOfNotNull(volume.model, volume.device, volume.mounts.joinToString().ifBlank { null }).joinToString(" · ")
+
+/** One warning per system or media volume above 85%, naming the real device. */
+fun diskWarnings(overview: SystemOverview): List<String> =
+    overviewVolumes(overview).filter { it.percent > 85f && (it.isSystem || it.isMedia) }.map { v ->
+        val full = "${v.percent.roundToInt()}% full — ${formatBytes(v.available)} left."
+        val device = if (v.kind == "Disk") "" else " (${v.kind})"
+        when {
+            v.isSystem && v.isMedia -> {
+                val disk = if (v.kind == "Disk") "disk" else v.kind
+                val reserve = if (v.reserved > 0) "; system services keep a ${formatBytes(v.reserved)} reserve" else ""
+                "The $disk holding both the system and your media is $full Downloads stop when it fills$reserve."
+            }
+            v.isSystem -> "System disk$device is $full"
+            else -> "Media storage$device is $full"
+        }
+    }
 
 @Composable
 fun ResourceTile(
@@ -121,7 +152,11 @@ fun ResourceTile(
 fun ResourceTiles(overview: SystemOverview, modifier: Modifier = Modifier) {
     val cpu = overview.cpu?.percent
     val memory = overview.memory
-    val storage = overview.disks?.storage
+    val volumes = overviewVolumes(overview)
+    val storage = mediaVolume(volumes)
+    // One disk for everything: say which, since "media storage" is the system disk too.
+    val storageLabel = if (storage != null && "System" in storage.roles && "Media" in storage.roles && storage.kind != "Disk")
+        "Storage · ${storage.kind}" else "Media storage"
     val temperature = overview.temperature
     Column(modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -131,7 +166,7 @@ fun ResourceTiles(overview: SystemOverview, modifier: Modifier = Modifier) {
                 memory?.percent, memory?.let { "${formatBytes(it.used)} of ${formatBytes(it.total)}" })
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ResourceTile("Media storage", storage?.let { formatBytes(it.available) } ?: "—", Modifier.weight(1f),
+            ResourceTile(storageLabel, storage?.let { formatBytes(it.available) } ?: "—", Modifier.weight(1f),
                 storage?.percent, storage?.let { "free · ${it.percent.roundToInt()}% used of ${formatBytes(it.size)}" })
             if (temperature != null) {
                 ResourceTile("Temperature", "${temperature.roundToInt()}°C", Modifier.weight(1f),
