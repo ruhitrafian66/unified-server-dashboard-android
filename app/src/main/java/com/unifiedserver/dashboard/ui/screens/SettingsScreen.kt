@@ -30,7 +30,6 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { viewModel.refreshConfiguration() }
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Local editable state

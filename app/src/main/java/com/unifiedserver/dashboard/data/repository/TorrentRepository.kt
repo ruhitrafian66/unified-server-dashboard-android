@@ -53,21 +53,6 @@ open class TorrentRepository @Inject constructor(
         }
     }
 
-    suspend fun getSearchStatus(id: Int): Result<SearchStatusItem> = apiResult {
-        val service = buildApiService(preferencesManager)
-        val response = service.getSearchStatus(id)
-        if (response.isSuccessful) {
-            val statusList = response.body()
-            when {
-                statusList == null -> throw Exception("Response body is null")
-                statusList.isEmpty() -> throw Exception("Search ID $id not found on server")
-                else -> statusList.first()
-            }
-        } else {
-            throw response.httpFailure()
-        }
-    }
-
     open suspend fun getSearchResults(id: Int, offset: Int = 0): Result<SearchResultsResponse> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getSearchResults(id, offset = offset)

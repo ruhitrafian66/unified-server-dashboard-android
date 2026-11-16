@@ -89,7 +89,8 @@ fun SystemScreen(
                             samples = history.samples.orEmpty(),
                             range = history.range,
                             onRangeChange = { range -> viewModel.selectRange(metric, range) },
-                            loading = history.loading || history.samples == null,
+                            loading = history.loading || (history.samples == null && history.error == null),
+                            error = history.error,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                         )
                     }

@@ -31,7 +31,12 @@ const val CSRF_VALUE = "dashboard"
 
 /** Shared connection pool; no request/response bodies or credentials are logged. */
 object BackendClient {
+    /** Remembers the address of .local servers; see [LocalNameDns]. */
+    val dns = LocalNameDns()
+
     val httpClient: OkHttpClient = OkHttpClient.Builder()
+        .dns(dns)
+        .eventListener(ForgetOnConnectFailure(dns))
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
@@ -75,14 +80,32 @@ internal inline fun <T> apiResult(block: () -> T): Result<T> = try {
     Result.failure(error)
 }
 
-/** The backend reports failures as `{ "error": "..." }`; prefer that over a bare status code. */
-internal fun Response<*>.httpFailure(): IOException {
+/**
+ * The server answered, and the answer was an error. [refused] means it stated that the
+ * request was not carried out (a 4xx, or `success: false`). A 5xx can come after the work
+ * started (for example qBittorrent timing out), so it says nothing certain about the outcome.
+ */
+class ServerErrorException(
+    message: String, val code: Int, val refused: Boolean = code in 400..499
+) : IOException(message)
+
+/**
+ * The backend reports failures as `{ "error": "...", "details": "..." }` (details are
+ * optional); prefer that over a bare status code.
+ */
+internal fun Response<*>.httpFailure(): ServerErrorException {
     val serverMessage = try {
-        errorBody()?.string()?.let { JsonParser.parseString(it).asJsonObject.get("error")?.asString }
+        errorBody()?.string()?.let { body ->
+            val json = JsonParser.parseString(body).asJsonObject
+            fun text(key: String) = json.get(key)?.takeIf { it.isJsonPrimitive }?.asString?.trim()?.takeIf { it.isNotEmpty() }
+            val error = text("error")
+            val details = text("details")
+            if (error != null && details != null) "${error.trimEnd('.')}. $details" else error ?: details
+        }
     } catch (_: Exception) {
         null
     }
-    return IOException(serverMessage?.takeIf { it.isNotBlank() } ?: "Server request failed (HTTP ${code()}).")
+    return ServerErrorException(serverMessage ?: "Server request failed (HTTP ${code()}).", code())
 }
 
 /** Returns the body of a successful response, or throws the server's error message. */
@@ -96,6 +119,6 @@ internal fun <T> Response<ApiResponse<T>>.requireSuccess() {
     if (code() == 204) return
     val payload = body() ?: throw IOException("Server returned an empty response.")
     if (!payload.success || payload.error != null) {
-        throw IOException(payload.message ?: payload.error ?: "The server rejected this action.")
+        throw ServerErrorException(payload.message ?: payload.error ?: "The server rejected this action.", code(), refused = true)
     }
 }

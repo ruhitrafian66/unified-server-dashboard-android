@@ -24,6 +24,11 @@ die() { printf 'deploy: %s\n' "$*" >&2; exit 1; }
 # ─── Preconditions ────────────────────────────────────────────────────────────
 [ "$(git branch --show-current)" = master ] || die "check out master first (only master is deployed)."
 [ -z "$(git status --porcelain --untracked-files=no)" ] || die "commit or stash your changes first."
+# The build compiles the working tree, so an untracked source file would reach phones
+# without being on GitHub. Untracked notes elsewhere (not built) are left alone.
+UNTRACKED=$(git ls-files --others --exclude-standard -- app gradle '*.kts' gradle.properties)
+[ -z "$UNTRACKED" ] || die "untracked files would be built into the release; commit or remove them:
+$UNTRACKED"
 git fetch -q origin master
 [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/master)" ] || die "master is not pushed (try: git ship)."
 [ -f "$KEYSTORE" ] || die "release keystore missing: $KEYSTORE"

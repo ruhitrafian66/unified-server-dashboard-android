@@ -24,6 +24,7 @@ class AutomaticDownloadTest {
         var runningPolls = 0
         var secondPage = false
         var addFails = false
+        var addError: Exception = Exception("Connection lost")
         var addDelay = 0L
         val added = mutableListOf<String>()
         val offsets = mutableListOf<Int>()
@@ -40,7 +41,7 @@ class AutomaticDownloadTest {
         override suspend fun addTorrent(urls: String): Result<Unit> {
             added += urls
             delay(addDelay)
-            return if (addFails) Result.failure(Exception("Connection lost")) else Result.success(Unit)
+            return if (addFails) Result.failure(addError) else Result.success(Unit)
         }
     }
 
@@ -104,6 +105,30 @@ class AutomaticDownloadTest {
         vm.retryAutomaticDownload()
         advanceUntilIdle()
         assertEquals(1, repo.added.size)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun aRefusalFromTheServerIsCertainAndCanBeRetried() = runTest {
+        val repo = Fake().apply {
+            addFails = true
+            addError = ServerErrorException("Torrent rejected. qBittorrent rejected the link: it is invalid, unavailable, or already added.", 400)
+        }
+        val vm = TorrentsViewModel(repo, DownloadsMonitor(repo))
+        vm.autoPickAndAdd(request)
+        advanceUntilIdle()
+        val operation = vm.uiState.value.operation!!
+        assertEquals(DownloadStage.FAILED, operation.stage)
+        assertEquals("Not added. Torrent rejected. qBittorrent rejected the link: it is invalid, unavailable, or already added.",
+            operation.message)
+        assertTrue(operation.canRetry)
+        assertFalse(vm.uiState.value.isMutating)
+
+        // A 5xx may come after qBittorrent took the torrent: still uncertain.
+        repo.addError = ServerErrorException("Server request failed (HTTP 502).", 502)
+        vm.retryAutomaticDownload()
+        advanceUntilIdle()
+        assertEquals(false, vm.uiState.value.operation?.canRetry)
+        assertTrue(vm.uiState.value.operation!!.message.startsWith("Could not confirm"))
         vm.viewModelScope.cancel()
     }
 

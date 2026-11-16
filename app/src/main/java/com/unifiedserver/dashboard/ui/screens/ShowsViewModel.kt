@@ -24,12 +24,16 @@ data class ShowsUiState(
     val isSearchingTmdb: Boolean = false,
     val tmdbSearchResults: List<TmdbSearchResult> = emptyList(),
     val tmdbSearchError: String? = null,
+    /** The query whose results (possibly none) are showing; null until a search finishes. */
+    val tmdbSearchedQuery: String? = null,
     val tmdbConfigured: Boolean = false,
     // Queue
     val queueStatus: QueueStatusResponse? = null,
     val autoCheckEnabled: Boolean = false,
     val autoCheckReady: Boolean = false,
     val automationError: String? = null,
+    /** Id of the tracked show whose episode download is being requested. */
+    val requestingEpisodesFor: String? = null,
     // Season download (past shows)
     val isDownloadingSeason: Boolean = false,
     val downloadProgress: DownloadProgressResponse? = null,
@@ -45,26 +49,34 @@ class ShowsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ShowsUiState())
     val uiState: StateFlow<ShowsUiState> = _uiState.asStateFlow()
 
+    // Declared before init: it starts the first loads, which set these.
+    private var showsJob: Job? = null
+    private var showsLoaded = false
+    private var queueJob: Job? = null
+    private var downloadJob: Job? = null
+    private var searchJob: Job? = null
+    private var addingShow = false
+
     init {
         loadShows()
         checkTmdbConfig()
         loadQueueStatus()
         viewModelScope.launch {
             automation.state.collect {
+                // Not tied to `refreshing`: the switch would grey out on every periodic refresh.
                 _uiState.value = _uiState.value.copy(autoCheckEnabled = it.autoCheck ?: false,
-                    autoCheckReady = it.autoCheck != null && it.autoCheckError == null && !it.refreshing,
+                    autoCheckReady = it.autoCheck != null && it.autoCheckError == null,
                     automationError = it.autoCheckError)
             }
         }
         refreshAutomation()
     }
 
-    private var downloadJob: Job? = null
-    private var searchJob: Job? = null
-    private var addingShow = false
-
-    fun loadQueueStatus() {
-        viewModelScope.launch {
+    /** A [silent] refresh leaves a load that is already running alone. */
+    fun loadQueueStatus(silent: Boolean = false) {
+        if (silent && queueJob?.isActive == true) return
+        queueJob?.cancel()
+        queueJob = viewModelScope.launch {
             repository.getQueueStatus()
                 .onSuccess { status ->
                     _uiState.value = _uiState.value.copy(queueStatus = status)
@@ -104,14 +116,23 @@ class ShowsViewModel @Inject constructor(
         }
     }
 
-    fun loadShows() {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+    /**
+     * A [silent] refresh (the periodic one) shows no spinner once the list has loaded
+     * and leaves a load that is already running alone. Any other call replaces it, so
+     * the list shown after a change was read after that change.
+     */
+    fun loadShows(silent: Boolean = false) {
+        if (silent && showsJob?.isActive == true) return
+        showsJob?.cancel()
+        showsJob = viewModelScope.launch {
+            if (!silent || !showsLoaded) _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             repository.getShows()
                 .onSuccess { shows ->
+                    showsLoaded = true
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        shows = shows
+                        shows = shows,
+                        error = null
                     )
                 }
                 .onFailure { e ->
@@ -123,18 +144,12 @@ class ShowsViewModel @Inject constructor(
         }
     }
 
-    fun addShow(name: String, tmdbId: Int? = null, season: Int = 1, episode: Int = 0, onAdded: () -> Unit = {}) {
+    /** The server decides where tracking starts: after the latest aired episode. */
+    fun addShow(name: String, tmdbId: Int? = null, onAdded: () -> Unit = {}) {
         if (addingShow) return
         addingShow = true
         viewModelScope.launch {
-            repository.addShow(
-                AddShowRequest(
-                    tmdbId = tmdbId,
-                    name = name,
-                    currentSeason = season,
-                    currentEpisode = episode
-                )
-            )
+            repository.addShow(AddShowRequest(tmdbId = tmdbId, name = name))
                 .onSuccess { response ->
                     val message = response.message ?: "Show added: $name"
                     _uiState.value = _uiState.value.copy(snackbarMessage = message)
@@ -161,16 +176,6 @@ class ShowsViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(
                         snackbarMessage = "Error: ${e.message}"
                     )
-                }
-        }
-    }
-
-    fun updateProgress(showId: String, season: Int, episode: Int) {
-        viewModelScope.launch {
-            repository.updateShow(showId, UpdateShowRequest(currentSeason = season, currentEpisode = episode))
-                .onSuccess { loadShows() }
-                .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(snackbarMessage = "Error: ${e.message}")
                 }
         }
     }
@@ -234,18 +239,25 @@ class ShowsViewModel @Inject constructor(
         }
     }
 
-    fun downloadSeason(show: Show) {
+    /**
+     * As on the web dashboard: the server searches episodes [startEpisode]..[endEpisode]
+     * of the show's current season one by one, in its search queue. One request at a time.
+     */
+    fun downloadEpisodes(show: Show, startEpisode: Int, endEpisode: Int) {
+        if (_uiState.value.requestingEpisodesFor != null) return
+        _uiState.value = _uiState.value.copy(requestingEpisodesFor = show.id)
         viewModelScope.launch {
-            repository.downloadSeason(show.tmdbId, show.currentSeason, show.name)
+            repository.downloadEpisodes(show.id, show.currentSeason, startEpisode, endEpisode)
                 .onSuccess { response ->
-                    val msg = response.message
-                        ?: "Downloading Season ${show.currentSeason} of ${show.name}"
-                    _uiState.value = _uiState.value.copy(snackbarMessage = msg)
-                    response.sessionId?.let { pollDownloadProgress(it) }
+                    _uiState.value = _uiState.value.copy(snackbarMessage =
+                        if (response.success) "${response.message ?: "Searching in the background"}. Progress is in the search queue."
+                        else response.message ?: "Download failed")
+                    if (response.success) loadQueueStatus()
                 }
                 .onFailure { e ->
-                    _uiState.value = _uiState.value.copy(snackbarMessage = "Error: ${e.message}")
+                    _uiState.value = _uiState.value.copy(snackbarMessage = "Error starting season download: ${e.message}")
                 }
+            _uiState.value = _uiState.value.copy(requestingEpisodesFor = null)
         }
     }
 
@@ -326,13 +338,15 @@ class ShowsViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(
                 isSearchingTmdb = true,
                 tmdbSearchResults = emptyList(),
-                tmdbSearchError = null
+                tmdbSearchError = null,
+                tmdbSearchedQuery = null
             )
             repository.searchShows(query)
                 .onSuccess { results ->
                     _uiState.value = _uiState.value.copy(
                         isSearchingTmdb = false,
-                        tmdbSearchResults = results
+                        tmdbSearchResults = results,
+                        tmdbSearchedQuery = query
                     )
                 }
                 .onFailure { e ->
@@ -349,7 +363,8 @@ class ShowsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             tmdbSearchResults = emptyList(),
             isSearchingTmdb = false,
-            tmdbSearchError = null
+            tmdbSearchError = null,
+            tmdbSearchedQuery = null
         )
     }
 
@@ -366,9 +381,10 @@ class ShowsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(snackbarMessage = null)
     }
 
-    fun refresh() {
-        loadShows()
-        loadQueueStatus()
+    /** [silent] is the periodic refresh: no spinner, and nothing already loading is restarted. */
+    fun refresh(silent: Boolean = false) {
+        loadShows(silent)
+        loadQueueStatus(silent)
         refreshAutomation()
     }
 }

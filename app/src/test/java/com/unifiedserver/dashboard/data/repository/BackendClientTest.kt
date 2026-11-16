@@ -99,6 +99,33 @@ class BackendClientTest {
         assertEquals("Show is already being tracked", result.exceptionOrNull()?.message)
     }
 
+    @Test fun refusalCarriesTheServersDetailsAndIsMarkedCertain() {
+        val (result, _) = withServer(MockResponse().setResponseCode(400).setBody(
+            """{"error":"Torrent rejected","details":"qBittorrent rejected the link: it is invalid, unavailable, or already added."}""")) {
+            TorrentRepository(it).addTorrent("magnet:?xt=urn:btih:abc")
+        }
+        val error = result.exceptionOrNull() as ServerErrorException
+        assertEquals("Torrent rejected. qBittorrent rejected the link: it is invalid, unavailable, or already added.", error.message)
+        assertTrue(error.refused)
+
+        val (unavailable, _) = withServer(MockResponse().setResponseCode(502).setBody("<html>Bad gateway</html>")) {
+            TorrentRepository(it).addTorrent("magnet:?xt=urn:btih:abc")
+        }
+        assertFalse((unavailable.exceptionOrNull() as ServerErrorException).refused)
+    }
+
+    @Test fun trackedShowEpisodesAreRequestedByShowAndSeason() {
+        val (result, request) = withServer(MockResponse().setBody(
+            """{"success":true,"sessionId":"s1","message":"Searching Example S03 E2–99 in the background"}""")) {
+            ShowsRepository(it).downloadEpisodes("1731000000000", 3, 2, 99)
+        }
+        assertEquals("POST", request.method)
+        assertEquals("/api/shows/1731000000000/season/3", request.path)
+        assertEquals("""{"startEpisode":2,"endEpisode":99}""", request.body.readUtf8())
+        assertEquals("dashboard", request.getHeader("X-Requested-With"))
+        assertTrue(result.getOrThrow().success)
+    }
+
     @Test fun nonJsonErrorFallsBackToStatusCode() {
         val (result, _) = withServer(MockResponse().setResponseCode(502).setBody("<html>Bad gateway</html>")) {
             DashboardRepository(it).getOverview()

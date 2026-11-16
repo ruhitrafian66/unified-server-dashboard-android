@@ -54,6 +54,28 @@ class AutomationSettingsTest {
         tracked.viewModelScope.cancel()
     }
 
+    @Test fun trackedSwitchStaysUsableWhileTheSnapshotRefreshes() = runTest {
+        val slowShows = object : ShowsRepository(prefs) {
+            override suspend fun getAutoCheckConfig(): Result<AutoCheckConfig> {
+                delay(1000)
+                return Result.success(AutoCheckConfig(enabled = true))
+            }
+        }
+        val shared = AutomationSettingsRepository(prefs, torrents, slowShows)
+        val tracked = ShowsViewModel(slowShows, shared)
+        runCurrent()
+        assertFalse("nothing confirmed yet", tracked.uiState.value.autoCheckReady)
+        advanceUntilIdle()
+        assertTrue(tracked.uiState.value.autoCheckReady)
+
+        tracked.refresh(silent = true)   // the periodic refresh
+        runCurrent()
+        assertTrue(shared.state.value.refreshing)
+        assertTrue("the switch must not grey out every 30 s", tracked.uiState.value.autoCheckReady)
+        advanceUntilIdle()
+        tracked.viewModelScope.cancel()
+    }
+
     @Test fun failedRefreshRetainsConfirmedValueAndRetryClearsOnlyItsError() = runTest {
         val shared = AutomationSettingsRepository(prefs, torrents, shows)
         shared.refresh()

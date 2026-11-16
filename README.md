@@ -57,7 +57,9 @@ arrive when F-Droid refreshes; pull to refresh to check immediately.
 
 - **Home**: health, last update, resources, VPN and qBittorrent status.
 - **Media**: Movies, TV discovery, Tracked shows and Torrents (source search,
-  paginated results, magnet links).
+  paginated results, magnet links). A tracked show starts after its latest aired
+  episode (the server decides); its download button asks which episodes of the
+  current season to fetch, as on the web dashboard.
 - **Storage**: the server's download folder as a media library (`/api/library`):
   clean movie/TV entries with posters, seasons and episodes, duplicate and partial
   detection, junk cleanup and delete (which also removes the torrent).
@@ -83,7 +85,9 @@ pages, up to 2,000 results and a five-minute overall deadline. Incomplete or
 oversized result sets require manual selection. A persistent Torrents card
 shows searching, selection, adding, success, failure and cancellation. Once an
 add request is sent, it cannot be safely cancelled or automatically retried:
-check the downloads bar first if the network outcome is uncertain.
+check the downloads bar first if the network outcome is uncertain. A refusal the
+server states (for example a link qBittorrent already has) is shown as "Not added"
+and can be retried.
 
 Settings and Tracked shows share one server-confirmed automation snapshot.
 Failed refreshes retain known values and expose retry without changing them.
@@ -101,6 +105,8 @@ private preferences. Request bodies are not logged. Configure only a trusted
 backend. This repository does not establish or audit backend authentication.
 HTTPS is the default; the network-security XML allows plain HTTP only for explicit
 local hosts and mDNS `.local` names (such as `dash.local`), not a private-network wildcard.
+The app remembers the address a `.local` name last resolved to, because Android looks
+these names up slowly; it forgets the address when a connection to it fails.
 
 ## Validation
 

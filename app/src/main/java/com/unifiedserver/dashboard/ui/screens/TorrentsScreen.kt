@@ -45,6 +45,9 @@ fun TorrentsScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     var query by rememberSaveable(uiState.searchQuery) { mutableStateOf(uiState.searchQuery) }
     var magnet by rememberSaveable { mutableStateOf("") }
+    val sortedResults = remember(uiState.searchResults, uiState.searchResultsSortOption, uiState.searchResultsSortOrder) {
+        sortSearchResults(uiState.searchResults, uiState.searchResultsSortOption, uiState.searchResultsSortOrder)
+    }
 
     LaunchedEffect(incoming) {
         incoming?.let { request ->
@@ -151,7 +154,7 @@ fun TorrentsScreen(
                         }
                     }
                 }
-                items(viewModel.getSortedSearchResults(), key = { it.fileUrl }) { result ->
+                items(sortedResults, key = { it.fileUrl }) { result ->
                     Box(Modifier.padding(horizontal = 16.dp, vertical = 3.dp)) {
                         SearchResultItem(result, enabled = !uiState.isMutating, onAdd = { viewModel.addTorrent(result.fileUrl) })
                     }

@@ -31,7 +31,8 @@ fun ShowItem(
     onToggleStatus: () -> Unit,
     onDownloadSeason: () -> Unit,
     onDelete: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    downloadEnabled: Boolean = true
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
@@ -69,7 +70,8 @@ fun ShowItem(
         enableDismissFromStartToEnd = false,
         modifier = modifier
     ) {
-        ShowCard(show = show, onToggleStatus = onToggleStatus, onDownloadSeason = onDownloadSeason)
+        ShowCard(show = show, onToggleStatus = onToggleStatus, onDownloadSeason = onDownloadSeason,
+            downloadEnabled = downloadEnabled)
     }
 }
 
@@ -81,7 +83,8 @@ private fun airDate(value: String): String = runCatching {
 fun ShowCard(
     show: Show,
     onToggleStatus: () -> Unit,
-    onDownloadSeason: () -> Unit
+    onDownloadSeason: () -> Unit,
+    downloadEnabled: Boolean = true
 ) {
     val isActive = show.status.equals("active", ignoreCase = true)
     Column(Modifier.fillMaxWidth().background(Background)) {
@@ -134,11 +137,11 @@ fun ShowCard(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            IconButton(onClick = onDownloadSeason) {
+            IconButton(onClick = onDownloadSeason, enabled = downloadEnabled) {
                 Icon(
                     imageVector = Icons.Filled.Download,
                     contentDescription = "Download season ${show.currentSeason} of ${show.name}",
-                    tint = Primary
+                    tint = if (downloadEnabled) Primary else StatusGray
                 )
             }
         }

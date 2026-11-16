@@ -17,11 +17,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.unifiedserver.dashboard.ui.theme.*
-import com.unifiedserver.dashboard.ui.utils.formatBytes
-import com.unifiedserver.dashboard.ui.utils.formatEta
-import com.unifiedserver.dashboard.ui.utils.formatSpeed
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
 
 @Composable
 fun LoadingScreen() {

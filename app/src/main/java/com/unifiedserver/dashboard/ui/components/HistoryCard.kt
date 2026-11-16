@@ -104,7 +104,9 @@ fun HistoryCard(
     range: HistoryRange,
     onRangeChange: (HistoryRange) -> Unit,
     modifier: Modifier = Modifier,
-    loading: Boolean = false
+    loading: Boolean = false,
+    /** Why the latest load failed; shown when there is no chart to keep on screen. */
+    error: String? = null
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -156,6 +158,8 @@ fun HistoryCard(
                     }
                 }
                 loading -> LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp))
+                error != null -> Text("Couldn't load this range: $error",
+                    style = MaterialTheme.typography.bodySmall, color = StatusRed)
                 else -> Text("Not enough samples yet. The server records one per minute.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

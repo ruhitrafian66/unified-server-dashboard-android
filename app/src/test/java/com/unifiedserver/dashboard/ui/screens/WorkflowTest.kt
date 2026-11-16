@@ -62,10 +62,18 @@ class WorkflowTest {
     }
 
     private class MediaFake(prefs: PreferencesManager) : MediaRepository(prefs) {
-        override suspend fun getTrendingTv() = Result.success(emptyList<TmdbMediaItem>())
+        var tvLoads = 0
+        var movieLoads = 0
+        override suspend fun getTrendingTv(): Result<List<TmdbMediaItem>> {
+            tvLoads++
+            return Result.success(listOf(TmdbMediaItem(id = 7, name = "Show", mediaType = "tv")))
+        }
         var moviePages = 3
-        override suspend fun getNewOnStreamingMovies(page: Int) = Result.success(TmdbTrendingResponse(page,
-            listOf(TmdbMediaItem(id = 100 + page, title = "Movie $page", mediaType = "movie")), moviePages, moviePages))
+        override suspend fun getNewOnStreamingMovies(page: Int): Result<TmdbTrendingResponse> {
+            movieLoads++
+            return Result.success(TmdbTrendingResponse(page,
+                listOf(TmdbMediaItem(id = 100 + page, title = "Movie $page", mediaType = "movie")), moviePages, moviePages))
+        }
         override suspend fun searchMovies(query: String, page: Int): Result<TmdbTrendingResponse> {
             delay(if (query == "old") 1_000 else 10)
             return Result.success(TmdbTrendingResponse(page, listOf(TmdbMediaItem(id = page, title = query, mediaType = "movie")), 2, 2))
@@ -223,6 +231,7 @@ class WorkflowTest {
     @Test fun moviesLoadMoreAppendsNextStreamingPageAndStopsAtLastPage() = runTest {
         val media = MediaFake(preferences()).apply { moviePages = 2 }
         val vm = MediaViewModel(media, DownloadHandoff())
+        vm.loadTrending("movie")
         advanceUntilIdle()
         assertEquals(listOf(101), vm.uiState.value.trendingMovies.map { it.id })
         vm.loadMoreMovies()
@@ -232,6 +241,65 @@ class WorkflowTest {
         vm.loadMoreMovies()
         advanceUntilIdle()
         assertEquals(2, vm.uiState.value.trendingMovies.size)
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun eachMediaTabLoadsOnlyItsOwnList() = runTest {
+        val media = MediaFake(preferences())
+        val tv = MediaViewModel(media, DownloadHandoff())
+        advanceUntilIdle()
+        assertEquals("nothing loads until a tab asks", 0, media.tvLoads + media.movieLoads)
+        tv.loadTrending("tv")
+        advanceUntilIdle()
+        assertEquals(listOf(7), tv.uiState.value.trendingTv.map { it.id })
+        assertEquals(1 to 0, media.tvLoads to media.movieLoads)
+
+        val movies = MediaViewModel(media, DownloadHandoff())
+        movies.loadTrending("movie")
+        advanceUntilIdle()
+        assertEquals(1 to 1, media.tvLoads to media.movieLoads)
+        tv.viewModelScope.cancel()
+        movies.viewModelScope.cancel()
+    }
+
+    @Test fun firstPageOfSearchResultsHasEachLinkOnce() = runTest {
+        // The list keys rows by link; two rows with one link would crash it.
+        val repo = object : TorrentRepository(preferences()) {
+            override suspend fun startSearch(pattern: String, plugins: String, category: String) = Result.success(1)
+            override suspend fun stopSearch(id: Int) = Result.success(Unit)
+            override suspend fun getSearchResults(id: Int, offset: Int) = Result.success(SearchResultsResponse(
+                listOf(SearchResult(fileName = "A", fileUrl = "magnet:same"), SearchResult(fileName = "A again", fileUrl = "magnet:same"),
+                    SearchResult(fileName = "B", fileUrl = "magnet:other")), "Stopped", 3))
+        }
+        val vm = TorrentsViewModel(repo, DownloadsMonitor(repo))
+        vm.startSearch("query")
+        advanceUntilIdle()
+        val state = vm.uiState.value
+        assertEquals(listOf("magnet:same", "magnet:other"), state.searchResults.map { it.fileUrl })
+        assertEquals("the cursor still counts the server's rows", 3, state.searchOffset)
+        assertEquals(listOf("A", "B"), sortSearchResults(state.searchResults, TorrentSortOption.NAME, SortOrder.ASCENDING).map { it.fileName })
+        vm.viewModelScope.cancel()
+    }
+
+    @Test fun homeKeepsThePreviousReadingAndSaysWhyARefreshFailed() = runTest {
+        val prefs = preferences()
+        var offline = false
+        val repo = object : DashboardRepository(prefs) {
+            override suspend fun getOverview(): Result<SystemOverview> =
+                if (offline) Result.failure(java.io.IOException("Unable to resolve host \"dash.local\""))
+                else Result.success(SystemOverview(uptime = 5))
+        }
+        val vm = DashboardViewModel(repo)
+        vm.loadData()
+        advanceUntilIdle()
+        assertNull(vm.uiState.value.error)
+        assertNotNull(vm.uiState.value.lastUpdated)
+
+        offline = true
+        vm.loadData(silent = true)
+        advanceUntilIdle()
+        assertEquals("Unable to resolve host \"dash.local\"", vm.uiState.value.error)
+        assertEquals(5L, vm.uiState.value.overview?.uptime)
         vm.viewModelScope.cancel()
     }
 

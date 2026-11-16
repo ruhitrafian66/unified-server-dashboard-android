@@ -17,9 +17,6 @@ data class DownloadRequest(
 @Singleton
 class DownloadHandoff @Inject constructor() {
     val pendingQuery = MutableStateFlow<DownloadRequest?>(null)
-    fun request(query: String, autoPick: Boolean = false) {
-        pendingQuery.value = DownloadRequest(query, autoPick)
-    }
     fun request(request: DownloadRequest) { pendingQuery.value = request }
     fun consume() { pendingQuery.value = null }
 }

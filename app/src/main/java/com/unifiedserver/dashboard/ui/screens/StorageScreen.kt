@@ -67,6 +67,8 @@ fun StorageScreen(viewModel: StorageViewModel = hiltViewModel()) {
         containerColor = Background
     ) { padding ->
         val library = state.library
+        // Filtered and sorted when its inputs change, not on every redraw.
+        val visibleItems = remember(library, state.filter, state.sort, state.query) { state.visibleItems }
         Box(Modifier.fillMaxSize().padding(padding)) {
             when {
                 library == null && state.error != null ->
@@ -83,7 +85,7 @@ fun StorageScreen(viewModel: StorageViewModel = hiltViewModel()) {
                             sort = state.sort, onSort = viewModel::setSort
                         )
                     }
-                    val items = state.visibleItems
+                    val items = visibleItems
                     if (items.isEmpty()) {
                         item {
                             Text("Nothing matches.", modifier = Modifier.padding(16.dp),

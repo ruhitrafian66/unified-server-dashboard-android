@@ -41,7 +41,6 @@ fun MediaDetailSheet(
     tvDetail: TmdbTvDetail?,
     imdbRating: ImdbRatingResponse?,
     isLoading: Boolean,
-    isDownloading: Boolean,
     showSeasonPicker: Boolean,
     showAutomaticOptions: Boolean,
     downloadSeason: Int?,
@@ -309,7 +308,7 @@ fun MediaDetailSheet(
                 Column(Modifier.fillMaxWidth()) {
                 Button(
                     onClick = onDownload,
-                    enabled = !isDownloading && !isLoading && (isMovie || (tvDetail?.numberOfSeasons ?: 0) > 0),
+                    enabled = !isLoading && (isMovie || (tvDetail?.numberOfSeasons ?: 0) > 0),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp)
@@ -317,26 +316,16 @@ fun MediaDetailSheet(
                     colors = ButtonDefaults.buttonColors(containerColor = Primary),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    if (isDownloading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = OnPrimary,
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Searching...", color = OnPrimary)
-                    } else {
-                        Icon(Icons.Filled.Download, contentDescription = null, tint = OnPrimary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Find sources",
-                            color = OnPrimary,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
+                    Icon(Icons.Filled.Download, contentDescription = null, tint = OnPrimary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Find sources",
+                        color = OnPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
                 OutlinedButton(onClick = onAutoDownload,
-                    enabled = !isDownloading && !isLoading && error == null &&
+                    enabled = !isLoading && error == null &&
                         (if (isMovie) (movieDetail?.year ?: item.year).isNotBlank() else (tvDetail?.numberOfSeasons ?: 0) > 0),
                     modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                     Text("Auto-download…")

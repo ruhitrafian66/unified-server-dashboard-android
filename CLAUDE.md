@@ -13,12 +13,14 @@ work here.
 - "Sync with upstream" means: port what changed since the last synced backend commit.
   That commit is named in the newest `sync with backend <sha>` commit subject and in
   README.md ("The app targets the backend's current API"). Update both when you sync.
-- Read `git diff <last-sha> origin/HEAD` upstream. Port API changes from `backend/routes/`
-  and the matching UI behaviour from `frontend/src/pages/` and `components/`. Match the
-  web dashboard's wording, thresholds and fallbacks unless a phone needs something else.
+- Read `git diff <last-sha> origin/master` upstream (the clone has no `origin/HEAD`).
+  Port API changes from `backend/routes/` and the matching UI behaviour from
+  `frontend/src/pages/` and `components/`. Match the web dashboard's wording, thresholds
+  and fallbacks unless a phone needs something else.
 - The live server usually runs the newest backend already. Check with
-  `curl -s http://dash.local/api/system/overview` (`deploy.commit`) and read real
-  responses before writing models.
+  `curl -s --resolve dash.local:80:192.168.0.30 http://dash.local/api/system/overview`
+  (`deploy.commit`) and read real responses before writing models. `--resolve` skips this
+  Mac's ~5 s lookup of the `.local` name.
 - Keep working against older backends: new response fields are nullable or defaulted,
   and the UI falls back when they are absent.
 
@@ -74,8 +76,9 @@ on the server and confirms the index lists the new version. Phones update from F
 - `ssh orangepi` logs in as root on the Orange Pi (Debian 12, arm64) at 192.168.0.30,
   also reachable as `dash.local`. It is the owner's live home server: read freely, but
   ask before changing or deleting anything on it.
-- nginx on :80 proxies the dashboard backend (node, 127.0.0.1:3001) and serves the
-  F-Droid repo at `/fdroid/repo` from `/mnt/storage/fdroid`.
+- nginx on :80 routes by host name. `dash.local` proxies the dashboard backend (node,
+  127.0.0.1:3001). A request by IP reaches the default site, which serves only the
+  F-Droid repo at `/fdroid/repo` (from `/mnt/storage/fdroid`), so `/api` by IP is a 404.
 - qBittorrent runs in Docker (`docker exec qbittorrent curl -s http://127.0.0.1:8080/api/v2/...`).
   The media library is `/mnt/storage/Server`, mounted in the container as `/downloads`.
 
@@ -86,8 +89,10 @@ Package `com.unifiedserver.dashboard`, under `app/src/main/java/`:
 - `data/ApiService.kt`: every backend endpoint (Retrofit). `data/models/Models.kt`: all
   response models, Gson, every field defaulted.
 - `data/repository/`: one repository per area, returning `Result<T>` through `apiResult {}`.
-  `RetrofitFactory.kt` builds the client and adds `X-Requested-With: dashboard` to
-  writes (the backend's CSRF guard). `DownloadsMonitor` is the app-wide torrent list.
+  `RetrofitFactory.kt` builds the client and adds `X-Requested-With: dashboard` (the
+  backend's CSRF guard for writes). `LocalNameDns.kt` remembers the address of `.local`
+  servers, because Android resolves them slowly. `DownloadsMonitor` is the app-wide
+  torrent list.
 - `ui/screens/`: a screen and a Hilt view model per destination, state as one
   `data class …UiState` in a `StateFlow`.
 - `ui/components/`: shared composables plus the pure helpers they render
@@ -102,9 +107,15 @@ Package `com.unifiedserver.dashboard`, under `app/src/main/java/`:
 ## Conventions
 
 - Screens refresh with `RefreshWhileVisible(intervalMs)`; a failed refresh keeps the
-  previous data and shows an error line rather than blanking the screen.
+  previous data and shows an error line, with the cause, rather than blanking the screen.
+  That periodic refresh is `silent`: no spinner, and it leaves a load that is already
+  running alone, so a view model that loads in `init` does not load twice on opening.
+- A write that fails with `ServerErrorException.refused` (a 4xx or `success: false`) was
+  not carried out: say so. Any other failure of a write leaves the outcome unknown: say
+  that, and offer no automatic retry.
 - Guard against stale responses when the user can change what is being loaded (range,
   search, selection): apply a result only if it still matches the current request.
 - Comments say why, briefly. Commit subjects use `feat:`, `fix:`, `style:`, `ci:`.
-- Colours and status levels come from `ui/theme/` and `levelColor`/`healthColor`; over
-  65% is yellow and over 85% is red everywhere.
+- Colours and status levels come from `ui/theme/` and `levelColor`/`healthColor`: usage
+  bars and tiles turn yellow over 65% and red over 85%. The history charts use the web
+  dashboard's own bands instead (`HistoryScale`: CPU 60/80 %, temperature 60/75 °C).

@@ -62,13 +62,6 @@ data class SearchStartRequest(
 
 data class SearchStartResponse(val id: Int)
 
-// Backend returns an array of status objects
-data class SearchStatusItem(
-    val id: Int = 0,
-    val status: String = "Running",
-    val total: Int = 0
-)
-
 data class SearchResult(
     val fileName: String = "",
     val fileUrl: String = "",
@@ -285,6 +278,9 @@ data class DownloadSeasonRequest(
     val showName: String,
     val season: Int
 )
+
+/** The server treats 99 as "every aired episode". */
+data class EpisodeRangeRequest(val startEpisode: Int, val endEpisode: Int)
 
 data class DownloadSeasonResponse(
     val success: Boolean = false,

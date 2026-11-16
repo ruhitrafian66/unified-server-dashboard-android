@@ -26,22 +26,6 @@ fun formatSpeed(bytesPerSec: Long): String {
 }
 
 /**
- * Format seconds to human-readable ETA string
- * Returns "∞" for unlimited/no time remaining
- */
-fun formatEta(seconds: Long): String {
-    if (seconds <= 0 || seconds == Long.MAX_VALUE || seconds > 360000) return "∞"
-    val h = seconds / 3600
-    val m = (seconds % 3600) / 60
-    val s = seconds % 60
-    return when {
-        h > 0 -> "${h}h ${m}m"
-        m > 0 -> "${m}m ${s}s"
-        else -> "${s}s"
-    }
-}
-
-/**
  * Format uptime in seconds to human-readable uptime string
  * Examples: "2d 5h", "3h 45m", "25m"
  */

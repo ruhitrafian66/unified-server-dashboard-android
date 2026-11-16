@@ -35,8 +35,9 @@ fun MediaBrowseScreen(type: String, viewModel: MediaViewModel) {
     var searching by rememberSaveable { mutableStateOf(false) }
     val title = if (type == "tv") "TV shows" else "movies"
     val trending = if (type == "tv") state.trendingTv else state.trendingMovies
-    // Refreshing would reset "Load more" paging, so only auto-refresh the first page.
-    if (!searching && (type == "tv" || state.moviesPage <= 1)) RefreshWhileVisible(60_000) { viewModel.loadTrending() }
+    // Loads on opening the tab, then rarely: these lists change slowly. Refreshing would
+    // reset "Load more" paging, so only the first page is refreshed.
+    if (!searching && (type == "tv" || state.moviesPage <= 1)) RefreshWhileVisible(TRENDING_REFRESH_MS) { viewModel.loadTrending(type) }
     BackHandler(searching) {
         searching = false
         viewModel.clearSearch()
@@ -133,7 +134,7 @@ fun MediaBrowseScreen(type: String, viewModel: MediaViewModel) {
     state.selectedItem?.let {
         MediaDetailSheet(
             item = it, movieDetail = state.movieDetail, tvDetail = state.tvDetail, imdbRating = state.imdbRating,
-            isLoading = state.isLoadingDetail, isDownloading = state.isDownloading,
+            isLoading = state.isLoadingDetail,
             showSeasonPicker = state.showSeasonPicker, showAutomaticOptions = state.showAutomaticOptions,
             downloadSeason = state.downloadSeason, automaticRequested = state.automaticRequested,
             error = state.detailError, onDismiss = { viewModel.closeDetail() },

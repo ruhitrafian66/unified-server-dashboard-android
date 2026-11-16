@@ -44,9 +44,10 @@ fun ShowsScreen(
     var showSeasonSheet by rememberSaveable { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
     var deleteShow by remember { mutableStateOf<Show?>(null) }
+    var episodesShow by remember { mutableStateOf<Show?>(null) }
     var confirmClearQueue by rememberSaveable { mutableStateOf(false) }
 
-    RefreshWhileVisible(30_000) { viewModel.refresh() }
+    RefreshWhileVisible(30_000) { viewModel.refresh(silent = true) }
 
     LaunchedEffect(uiState.snackbarMessage) {
         uiState.snackbarMessage?.let { message ->
@@ -105,8 +106,9 @@ fun ShowsScreen(
                         ShowItem(
                             show = show,
                             onToggleStatus = { viewModel.toggleShowStatus(show) },
-                            onDownloadSeason = { viewModel.downloadSeason(show) },
-                            onDelete = { deleteShow = show }
+                            onDownloadSeason = { episodesShow = show },
+                            onDelete = { deleteShow = show },
+                            downloadEnabled = uiState.requestingEpisodesFor == null
                         )
                     }
                 }
@@ -115,7 +117,8 @@ fun ShowsScreen(
     }
 
     if (showSeasonSheet) {
-        ModalBottomSheet(onDismissRequest = { showSeasonSheet = false }) {
+        // The show search is shared with "Add TV Show": leave nothing behind for it.
+        ModalBottomSheet(onDismissRequest = { viewModel.clearTmdbSearch(); showSeasonSheet = false }) {
             SeasonDownloadTab(
                 uiState = uiState,
                 onSearch = { viewModel.searchTmdb(it) },
@@ -131,13 +134,14 @@ fun ShowsScreen(
             isSearching = uiState.isSearchingTmdb,
             searchResults = uiState.tmdbSearchResults,
             searchError = uiState.tmdbSearchError,
+            searchedQuery = uiState.tmdbSearchedQuery,
             onSearch = { viewModel.searchTmdb(it) },
             onDismiss = {
                 viewModel.clearTmdbSearch()
                 showAddDialog = false
             },
-            onAdd = { name, tmdbId, season, episode ->
-                    viewModel.addShow(name, tmdbId, season, episode) {
+            onAdd = { name, tmdbId ->
+                    viewModel.addShow(name, tmdbId) {
                         viewModel.clearTmdbSearch()
                         showAddDialog = false
                     }
@@ -152,6 +156,13 @@ fun ShowsScreen(
                 confirmClearQueue = true
             },
             onDismiss = { showQueueSheet = false }
+        )
+    }
+    episodesShow?.let { show ->
+        EpisodeRangeDialog(
+            show = show,
+            onConfirm = { start, end -> viewModel.downloadEpisodes(show, start, end); episodesShow = null },
+            onDismiss = { episodesShow = null }
         )
     }
     deleteShow?.let { show ->
@@ -241,14 +252,13 @@ fun AddShowDialog(
     isSearching: Boolean,
     searchResults: List<TmdbSearchResult>,
     searchError: String?,
+    searchedQuery: String?,
     onSearch: (String) -> Unit,
     onDismiss: () -> Unit,
-    onAdd: (name: String, tmdbId: Int?, season: Int, episode: Int) -> Unit
+    onAdd: (name: String, tmdbId: Int?) -> Unit
 ) {
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var manualName by rememberSaveable { mutableStateOf("") }
-    var season by rememberSaveable { mutableStateOf("1") }
-    var episode by rememberSaveable { mutableStateOf("1") }
     var selectedResult by remember { mutableStateOf<TmdbSearchResult?>(null) }
     var useManual by remember { mutableStateOf(!isTmdbConfigured) }
 
@@ -320,9 +330,7 @@ fun AddShowDialog(
                 ) {
                     Text("Search")
                 }
-                if (searchError != null) {
-                    Text(searchError, color = StatusRed, style = MaterialTheme.typography.bodySmall)
-                }
+                ShowSearchOutcome(searchError, searchedQuery, searchResults.isEmpty())
                 if (searchResults.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
@@ -365,39 +373,6 @@ fun AddShowDialog(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = season,
-                    onValueChange = { season = it.filter { c -> c.isDigit() } },
-                    label = { Text("Season") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Primary,
-                        unfocusedBorderColor = Divider,
-                        focusedLabelColor = Primary,
-                        focusedTextColor = OnSurface,
-                        unfocusedTextColor = OnSurface
-                    )
-                )
-                OutlinedTextField(
-                    value = episode,
-                    onValueChange = { episode = it.filter { c -> c.isDigit() } },
-                    label = { Text("Episode") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Primary,
-                        unfocusedBorderColor = Divider,
-                        focusedLabelColor = Primary,
-                        focusedTextColor = OnSurface,
-                        unfocusedTextColor = OnSurface
-                    )
-                )
-            }
-
             Spacer(modifier = Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -410,14 +385,7 @@ fun AddShowDialog(
                 Spacer(modifier = Modifier.width(8.dp))
                 val finalName = if (useManual) manualName else selectedResult?.name.orEmpty()
                 Button(
-                    onClick = {
-                        onAdd(
-                            finalName,
-                            if (useManual) null else selectedResult?.id,
-                            season.toIntOrNull() ?: 1,
-                            episode.toIntOrNull() ?: 1
-                        )
-                    },
+                    onClick = { onAdd(finalName, if (useManual) null else selectedResult?.id) },
                     enabled = finalName.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(containerColor = Primary)
                 ) {
@@ -427,6 +395,68 @@ fun AddShowDialog(
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
+}
+
+/** What a finished show search has to say when there is nothing to list. */
+@Composable
+private fun ShowSearchOutcome(error: String?, searchedQuery: String?, noResults: Boolean) {
+    val (text, color) = when {
+        error != null -> "Search failed: $error" to StatusRed
+        searchedQuery != null && noResults ->
+            "No shows match \"$searchedQuery\"." to MaterialTheme.colorScheme.onSurfaceVariant
+        else -> return
+    }
+    Text(text, color = color, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+}
+
+/**
+ * As on the web dashboard: which episodes of the show's current season to fetch. The
+ * server searches for each one in its queue; 99 stands for "every aired episode".
+ */
+@Composable
+private fun EpisodeRangeDialog(show: Show, onConfirm: (start: Int, end: Int) -> Unit, onDismiss: () -> Unit) {
+    var start by rememberSaveable(show.id) { mutableStateOf("1") }
+    var end by rememberSaveable(show.id) { mutableStateOf("99") }
+    val first = start.toIntOrNull()
+    val last = end.toIntOrNull()
+    val valid = first != null && last != null && first >= 1 && last >= first
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Download season ${show.currentSeason}?") },
+        text = {
+            Column {
+                Text("${show.name}: the server searches for each episode and adds what it finds.")
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = start, onValueChange = { start = it.filter(Char::isDigit).take(3) },
+                        label = { Text("From episode") }, singleLine = true, isError = !valid,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = end, onValueChange = { end = it.filter(Char::isDigit).take(3) },
+                        label = { Text("To episode") }, singleLine = true, isError = !valid,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Text(
+                    if (valid) "Leave 99 to get every aired episode."
+                    else "Enter a first episode of 1 or more and a last episode that is not before it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (valid) MaterialTheme.colorScheme.onSurfaceVariant else StatusRed,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = valid, onClick = { if (first != null && last != null) onConfirm(first, last) }) {
+                Text("Download")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable
@@ -598,6 +628,7 @@ fun SeasonDownloadTab(
         ) {
             Text("Search")
         }
+        ShowSearchOutcome(uiState.tmdbSearchError, uiState.tmdbSearchedQuery, uiState.tmdbSearchResults.isEmpty())
 
         if (uiState.tmdbSearchResults.isNotEmpty()) {
             Spacer(modifier = Modifier.height(12.dp))

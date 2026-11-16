@@ -1,7 +1,9 @@
 package com.unifiedserver.dashboard
 
+import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,7 +31,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // The app is dark whatever the phone's theme; the default follows the phone and
+        // would draw dark status-bar icons on the dark background in light mode.
+        val darkBars = SystemBarStyle.dark(Color.TRANSPARENT)
+        enableEdgeToEdge(statusBarStyle = darkBars, navigationBarStyle = darkBars)
         lifecycleScope.launch { preferencesManager.removeLegacySettings() }
         setContent {
             UnifiedServerDashboardTheme {

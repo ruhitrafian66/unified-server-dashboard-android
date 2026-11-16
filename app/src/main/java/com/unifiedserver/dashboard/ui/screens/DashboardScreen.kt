@@ -26,7 +26,7 @@ fun DashboardScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val openStorage = com.unifiedserver.dashboard.ui.navigation.LocalOpenStorage.current
-    RefreshWhileVisible(10_000) { viewModel.loadData(silent = uiState.health != null) }
+    RefreshWhileVisible(10_000) { viewModel.loadData(silent = uiState.overview != null) }
 
     Scaffold(
         topBar = {
@@ -41,9 +41,9 @@ fun DashboardScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            if (uiState.health == null && uiState.error == null) {
+            if (uiState.overview == null && uiState.error == null) {
                 LoadingScreen()
-            } else if (uiState.error != null && uiState.health == null) {
+            } else if (uiState.error != null && uiState.overview == null) {
                 ErrorScreen(
                     message = uiState.error ?: "Could not reach server",
                     onRetry = { viewModel.refresh() }
@@ -55,7 +55,7 @@ fun DashboardScreen(
                 ) {
                     item {
                         HealthBanner(
-                            isOnline = if (uiState.error?.contains("Connection") == true) null else uiState.health?.status == "ok",
+                            isOnline = uiState.error == null,
                             lastUpdated = uiState.lastUpdated,
                             modifier = Modifier.padding(16.dp)
                         )
@@ -91,13 +91,14 @@ fun DashboardScreen(
 
 @Composable
 fun HealthBanner(
-    isOnline: Boolean?,
+    isOnline: Boolean,
     lastUpdated: Long? = null,
     modifier: Modifier = Modifier
 ) {
-    val color = when (isOnline) { true -> StatusGreen; false -> StatusRed; null -> StatusYellow }
-    val text = when (isOnline) { true -> "Server online"; false -> "Server offline"; null -> "Connection unavailable — status may be stale" }
-    val icon = if (isOnline == true) Icons.Filled.CheckCircle else Icons.Filled.Error
+    // Not online means the last refresh failed; what is shown below is the previous reading.
+    val color = if (isOnline) StatusGreen else StatusYellow
+    val text = if (isOnline) "Server online" else "Connection unavailable — status may be stale"
+    val icon = if (isOnline) Icons.Filled.CheckCircle else Icons.Filled.Error
 
     Card(
         modifier = modifier.fillMaxWidth(),

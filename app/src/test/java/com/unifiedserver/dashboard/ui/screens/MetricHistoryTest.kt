@@ -88,8 +88,33 @@ class MetricHistoryTest {
         val withSensor = SystemViewModel(Server(tempFails = true))
         withSensor.loadAll()
         advanceUntilIdle()
-        assertEquals("Temperature history unavailable. Previous data retained.", withSensor.uiState.value.error)
+        assertEquals("Temperature history unavailable (404). Previous data retained.", withSensor.uiState.value.error)
         withSensor.viewModelScope.cancel()
+    }
+
+    @Test fun aFailedRangeSwitchIsReportedNotShownAsNoData() = runTest {
+        val server = Server()
+        val vm = SystemViewModel(server)
+        vm.loadAll()
+        advanceUntilIdle()
+
+        server.tempFails = true
+        vm.selectRange(HistoryMetric.TEMPERATURE, HistoryRange.D4)
+        advanceUntilIdle()
+        val failed = vm.uiState.value.histories.getValue(HistoryMetric.TEMPERATURE)
+        assertEquals(HistoryRange.D4, failed.range)
+        assertNull("no samples of the new range to show", failed.samples)
+        assertEquals("404", failed.error)
+        assertFalse(failed.loading)
+
+        // The next successful load of that range clears the error.
+        server.tempFails = false
+        vm.loadAll()
+        advanceUntilIdle()
+        val loaded = vm.uiState.value.histories.getValue(HistoryMetric.TEMPERATURE)
+        assertNull(loaded.error)
+        assertEquals(96f, loaded.samples!!.single().v)
+        vm.viewModelScope.cancel()
     }
 
     @Test fun statsAndDownsampling() {

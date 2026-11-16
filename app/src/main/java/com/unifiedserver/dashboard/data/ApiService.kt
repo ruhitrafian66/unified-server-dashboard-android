@@ -27,10 +27,6 @@ interface ApiService {
     @POST("api/qbittorrent/search/start")
     suspend fun startSearch(@Body request: SearchStartRequest): Response<SearchStartResponse>
 
-    // Backend returns a JSON array of status objects
-    @GET("api/qbittorrent/search/status/{id}")
-    suspend fun getSearchStatus(@Path("id") id: Int): Response<List<SearchStatusItem>>
-
     @GET("api/qbittorrent/search/results/{id}")
     suspend fun getSearchResults(
         @Path("id") id: Int,
@@ -108,6 +104,14 @@ interface ApiService {
 
     @POST("api/shows/download-season")
     suspend fun downloadSeason(@Body request: DownloadSeasonRequest): Response<DownloadSeasonResponse>
+
+    // Tracked shows: queues a search per episode in the range, without trying a season pack.
+    @POST("api/shows/{id}/season/{season}")
+    suspend fun downloadEpisodes(
+        @Path("id") id: String,
+        @Path("season") season: Int,
+        @Body request: EpisodeRangeRequest
+    ): Response<DownloadSeasonResponse>
 
     @GET("api/shows/download-progress/{sessionId}")
     suspend fun getDownloadProgress(@Path("sessionId") sessionId: String): Response<DownloadProgressResponse>

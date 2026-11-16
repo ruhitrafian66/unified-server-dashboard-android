@@ -9,7 +9,6 @@ import com.unifiedserver.dashboard.data.repository.DownloadRequest
 import com.unifiedserver.dashboard.data.repository.AutoDownloadPolicy
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,13 +38,14 @@ data class MediaUiState(
     val imdbRating: ImdbRatingResponse? = null,
     val isLoadingDetail: Boolean = false,
     val detailError: String? = null,
-    val isDownloading: Boolean = false,
     val showSeasonPicker: Boolean = false,   // TV-only: show season selector before download
     val showAutomaticOptions: Boolean = false,
     val automaticRequested: Boolean = false,
-    val downloadSeason: Int? = null,
-    val snackbarMessage: String? = null
+    val downloadSeason: Int? = null
 )
+
+/** The server caches TMDB lists for 10 minutes; asking more often returns the same page. */
+internal const val TRENDING_REFRESH_MS = 10 * 60_000L
 
 @HiltViewModel
 class MediaViewModel @Inject constructor(
@@ -60,27 +60,30 @@ class MediaViewModel @Inject constructor(
     private var moreMoviesJob: Job? = null
     private var searchType = "all"
 
-    init { loadTrending() }
-
-    fun loadTrending() {
+    /**
+     * Loads the browse list of one tab ([type] is "tv" or "movie"); each tab has its own
+     * view model and shows only its own list. A failure keeps the list already shown.
+     */
+    fun loadTrending(type: String) {
         trendingJob?.cancel()
         moreMoviesJob?.cancel()
         trendingJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoadingTrending = true, trendingError = null,
                 isLoadingMoreMovies = false, moviesLoadMoreError = null)
-            val tv = async { mediaRepository.getTrendingTv() }
-            val movies = async { mediaRepository.getNewOnStreamingMovies(1) }
-            val tvResult = tv.await()
-            val movieResult = movies.await()
-            val moviePage = movieResult.getOrNull()
-            _uiState.value = _uiState.value.copy(
-                isLoadingTrending = false,
-                trendingTv = tvResult.getOrElse { _uiState.value.trendingTv },
-                trendingMovies = moviePage?.results ?: _uiState.value.trendingMovies,
-                moviesPage = moviePage?.page ?: _uiState.value.moviesPage,
-                moviesTotalPages = moviePage?.totalPages ?: _uiState.value.moviesTotalPages,
-                trendingError = tvResult.exceptionOrNull()?.message ?: movieResult.exceptionOrNull()?.message
-            )
+            if (type == "tv") {
+                val result = mediaRepository.getTrendingTv()
+                _uiState.value = _uiState.value.copy(isLoadingTrending = false,
+                    trendingTv = result.getOrElse { _uiState.value.trendingTv },
+                    trendingError = result.exceptionOrNull()?.message)
+            } else {
+                val result = mediaRepository.getNewOnStreamingMovies(1)
+                val page = result.getOrNull()
+                _uiState.value = _uiState.value.copy(isLoadingTrending = false,
+                    trendingMovies = page?.results ?: _uiState.value.trendingMovies,
+                    moviesPage = page?.page ?: _uiState.value.moviesPage,
+                    moviesTotalPages = page?.totalPages ?: _uiState.value.moviesTotalPages,
+                    trendingError = result.exceptionOrNull()?.message)
+            }
         }
     }
 
@@ -219,6 +222,4 @@ class MediaViewModel @Inject constructor(
         handoff.request(DownloadRequest(query, autoPick, title, year, season, policy))
         closeDetail()
     }
-
-    fun clearSnackbar() { _uiState.value = _uiState.value.copy(snackbarMessage = null) }
 }

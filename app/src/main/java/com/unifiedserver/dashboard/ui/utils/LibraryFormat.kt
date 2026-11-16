@@ -2,7 +2,6 @@ package com.unifiedserver.dashboard.ui.utils
 
 import com.unifiedserver.dashboard.data.models.LibraryItem
 import com.unifiedserver.dashboard.data.models.LibraryTorrent
-import java.time.Instant
 
 enum class LibraryFilter(val label: String) { ALL("All"), MOVIES("Movies"), TV("TV"), OTHER("Other") }
 enum class LibrarySort(val label: String) { SIZE("Largest"), RECENT("Newest"), TITLE("A–Z") }
@@ -66,7 +65,8 @@ fun filterLibrary(items: List<LibraryItem>, filter: LibraryFilter, sort: Library
     }
     val order = when (sort) {
         LibrarySort.SIZE -> compareByDescending<LibraryItem> { it.size }
-        LibrarySort.RECENT -> compareByDescending { it.modified?.let { m -> runCatching { Instant.parse(m) }.getOrNull() } }
+        // ISO-8601 UTC timestamps (the server's toISOString) sort correctly as text.
+        LibrarySort.RECENT -> compareByDescending { it.modified }
         LibrarySort.TITLE -> compareBy { it.displayTitle.lowercase() }
     }
     return filtered.sortedWith(compareBy<LibraryItem> { if (it.isMedia) 0 else 1 }.then(order))

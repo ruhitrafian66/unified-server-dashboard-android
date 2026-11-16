@@ -135,6 +135,15 @@ open class ShowsRepository @Inject constructor(
         }
     }
 
+    /**
+     * Tracked shows: search episodes [startEpisode]..[endEpisode] of a season one by one
+     * in the server's queue (no season pack). `success = false` carries the server's reason.
+     */
+    open suspend fun downloadEpisodes(showId: String, season: Int, startEpisode: Int, endEpisode: Int): Result<DownloadSeasonResponse> = apiResult {
+        buildApiService(preferencesManager).downloadEpisodes(showId, season, EpisodeRangeRequest(startEpisode, endEpisode))
+            .bodyOr { throw Exception("Empty season-download response") }
+    }
+
     suspend fun getDownloadProgress(sessionId: String): Result<DownloadProgressResponse> = apiResult {
         val service = buildApiService(preferencesManager)
         val response = service.getDownloadProgress(sessionId)

@@ -25,11 +25,15 @@ data class SystemUiState(
     val snackbarMessage: String? = null
 )
 
-/** One history card: its selected range and the samples last loaded for it (null until loaded). */
+/**
+ * One history card: its selected range and the samples last loaded for it (null until
+ * loaded). [error] is why the latest load failed; older [samples] stay on screen with it.
+ */
 data class MetricHistory(
     val range: HistoryRange = HistoryRange.H6,
     val samples: List<HistorySample>? = null,
-    val loading: Boolean = false
+    val loading: Boolean = false,
+    val error: String? = null
 )
 
 /** The server adds one history point per minute, so polling histories faster only costs data. */
@@ -65,20 +69,25 @@ class SystemViewModel @Inject constructor(
 
             val overview = overviewResult.getOrNull() ?: _uiState.value.overview
             // Temperature history only matters on boards that report a temperature.
-            val failed = buildList {
-                if (overviewResult.isFailure) add("Server status")
-                if (historyResults[HistoryMetric.CPU]?.second?.isFailure == true) add("CPU history")
-                if (overview?.temperature != null && historyResults[HistoryMetric.TEMPERATURE]?.second?.isFailure == true)
-                    add("Temperature history")
+            val failed = buildList<Pair<String, Result<*>>> {
+                if (overviewResult.isFailure) add("Server status" to overviewResult)
+                historyResults[HistoryMetric.CPU]?.second?.takeIf { it.isFailure }?.let { add("CPU history" to it) }
+                if (overview?.temperature != null)
+                    historyResults[HistoryMetric.TEMPERATURE]?.second?.takeIf { it.isFailure }?.let { add("Temperature history" to it) }
             }
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 overview = overview,
                 histories = historyResults.entries.fold(_uiState.value.histories) { acc, (metric, result) ->
-                    acc.withSamples(metric, result.first, result.second.getOrNull())
+                    acc.withResult(metric, result.first, result.second)
                 },
                 lastUpdated = if (failed.isEmpty()) System.currentTimeMillis() else _uiState.value.lastUpdated,
-                error = failed.takeIf { it.isNotEmpty() }?.joinToString(postfix = " unavailable. Previous data retained.")
+                error = failed.takeIf { it.isNotEmpty() }?.let { failures ->
+                    // One cause is enough: when several parts fail together it is the same one.
+                    val cause = failures.firstNotNullOfOrNull { it.second.exceptionOrNull()?.message }
+                    failures.joinToString { it.first } + " unavailable" + (cause?.let { " ($it)" } ?: "") +
+                        ". Previous data retained."
+                }
             )
         }
     }
@@ -89,18 +98,24 @@ class SystemViewModel @Inject constructor(
         if (histories.getValue(metric).range == range) return
         _uiState.value = _uiState.value.copy(histories = histories + (metric to MetricHistory(range, loading = true)))
         viewModelScope.launch {
-            val samples = repository.getHistory(metric, range.hours).getOrNull()
-            _uiState.value = _uiState.value.copy(histories = _uiState.value.histories.withSamples(metric, range, samples ?: emptyList()))
+            val result = repository.getHistory(metric, range.hours)
+            _uiState.value = _uiState.value.copy(histories = _uiState.value.histories.withResult(metric, range, result))
         }
     }
 
-    /** Applies [samples] unless the user picked another range while they loaded; null keeps the old data. */
-    private fun Map<HistoryMetric, MetricHistory>.withSamples(
-        metric: HistoryMetric, range: HistoryRange, samples: List<HistorySample>?
+    /**
+     * Applies a load's outcome unless the user picked another range while it ran. A
+     * failure keeps the samples already shown and records why.
+     */
+    private fun Map<HistoryMetric, MetricHistory>.withResult(
+        metric: HistoryMetric, range: HistoryRange, result: Result<List<HistorySample>>
     ): Map<HistoryMetric, MetricHistory> {
         val current = getValue(metric)
         if (current.range != range) return this
-        return this + (metric to current.copy(samples = samples ?: current.samples, loading = false))
+        return this + (metric to current.copy(
+            samples = result.getOrNull() ?: current.samples,
+            loading = false,
+            error = result.exceptionOrNull()?.let { it.message ?: "Request failed." }))
     }
 
     fun reboot() {

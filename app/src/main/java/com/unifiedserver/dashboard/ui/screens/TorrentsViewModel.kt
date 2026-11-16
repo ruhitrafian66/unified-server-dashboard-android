@@ -104,7 +104,7 @@ class TorrentsViewModel @Inject constructor(
                     var complete = false
                     while (!complete) {
                         val response = repository.getSearchResults(id!!).getOrThrow()
-                        update(token) { it.copy(searchResults = response.results, searchTotal = response.total,
+                        update(token) { it.copy(searchResults = response.results.distinctSources(), searchTotal = response.total,
                             searchOffset = response.results.size, searchStatus = response.status,
                             operation = it.operation?.copy(message = "Searching… ${response.total} sources reported")) }
                         complete = response.status.equals("Stopped", true) || response.status.equals("Complete", true)
@@ -138,7 +138,8 @@ class TorrentsViewModel @Inject constructor(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                failSearch(token, request, error.message ?: "Search failed. Try again.")
+                failSearch(token, request, error.message ?: "Search failed. Try again.",
+                    refused = (error as? ServerErrorException)?.refused == true)
             } finally {
                 // The server owns its search too: stop that exact ID on completion/cancellation.
                 id?.let { searchId ->
@@ -167,7 +168,7 @@ class TorrentsViewModel @Inject constructor(
             offset += page.results.size
             check(page.total == total) { "Search results changed while paging. Please retry." }
             require(total <= 2_000 && offset <= 2_000) { "Too many results. Please select manually." }
-            update(token) { it.copy(searchResults = all.distinctBy { source -> source.fileUrl },
+            update(token) { it.copy(searchResults = all.distinctSources(),
                 searchOffset = offset, searchTotal = total,
                 operation = it.operation?.copy(message = "Checked $offset of $total results")) }
         }
@@ -178,13 +179,21 @@ class TorrentsViewModel @Inject constructor(
         if (token == generation) _uiState.value = transform(_uiState.value)
     }
 
-    private fun failSearch(token: Int, request: DownloadRequest, message: String) {
+    /**
+     * [refused] means the server answered that it did not do it. Any other failure while
+     * adding (timeout, lost connection) leaves the outcome unknown, so no retry is offered.
+     */
+    private fun failSearch(token: Int, request: DownloadRequest, message: String, refused: Boolean = false) {
         update(token) { state ->
-            val attemptedAdd = state.operation?.stage == DownloadStage.ADDING
-            val explanation = if (attemptedAdd) "Could not confirm whether the download was added. Refresh Downloads before trying again." else message
+            val uncertainAdd = state.operation?.stage == DownloadStage.ADDING && !refused
+            val explanation = when {
+                uncertainAdd -> "Could not confirm whether the download was added. Refresh Downloads before trying again."
+                state.operation?.stage == DownloadStage.ADDING -> "Not added. $message"
+                else -> message
+            }
             state.copy(isSearching = false, isMutating = false, searchError = explanation, searchStatus = "Failed",
                 operation = if (request.autoPick) DownloadOperation(request, DownloadStage.FAILED,
-                    explanation, state.operation?.source, canRetry = !attemptedAdd) else null)
+                    explanation, state.operation?.source, canRetry = !uncertainAdd) else null)
         }
     }
 
@@ -226,7 +235,7 @@ class TorrentsViewModel @Inject constructor(
         _uiState.value = state.copy(isLoadingMore = true, searchError = null)
         moreJob = viewModelScope.launch {
             repository.getSearchResults(id, state.searchOffset).onSuccess { page ->
-                update(token) { it.copy(searchResults = (it.searchResults + page.results).distinctBy { source -> source.fileUrl },
+                update(token) { it.copy(searchResults = (it.searchResults + page.results).distinctSources(),
                     searchTotal = page.total, searchOffset = if (page.results.isEmpty()) page.total else state.searchOffset + page.results.size,
                     isLoadingMore = false) }
             }.onFailure { error ->
@@ -242,13 +251,16 @@ class TorrentsViewModel @Inject constructor(
     }
     private fun nextOrder(same: Boolean, old: SortOrder) =
         if (same && old == SortOrder.DESCENDING) SortOrder.ASCENDING else SortOrder.DESCENDING
-    fun getSortedSearchResults(): List<SearchResult> {
-        val state = _uiState.value
-        val sorted = when (state.searchResultsSortOption) {
-            TorrentSortOption.NAME -> state.searchResults.sortedBy { it.fileName.lowercase() }
-            TorrentSortOption.SIZE -> state.searchResults.sortedBy { it.fileSize }
-            TorrentSortOption.SEEDS -> state.searchResults.sortedBy { it.nbSeeders }
-        }
-        return if (state.searchResultsSortOrder == SortOrder.DESCENDING) sorted.reversed() else sorted
+}
+
+/** Result rows are keyed by link in the list, so each link appears once. */
+private fun List<SearchResult>.distinctSources() = distinctBy { it.fileUrl }
+
+internal fun sortSearchResults(results: List<SearchResult>, option: TorrentSortOption, order: SortOrder): List<SearchResult> {
+    val sorted = when (option) {
+        TorrentSortOption.NAME -> results.sortedBy { it.fileName.lowercase() }
+        TorrentSortOption.SIZE -> results.sortedBy { it.fileSize }
+        TorrentSortOption.SEEDS -> results.sortedBy { it.nbSeeders }
     }
+    return if (order == SortOrder.DESCENDING) sorted.reversed() else sorted
 }

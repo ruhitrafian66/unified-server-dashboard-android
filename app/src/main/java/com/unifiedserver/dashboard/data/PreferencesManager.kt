@@ -58,10 +58,4 @@ class PreferencesManager(private val dataStore: DataStore<Preferences>) {
             prefs.asMap().keys.filter { it.name in LEGACY_KEYS }.forEach { prefs.remove(it) }
         }
     }
-
-    suspend fun setSetupComplete(complete: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[SETUP_COMPLETE] = complete
-        }
-    }
 }
