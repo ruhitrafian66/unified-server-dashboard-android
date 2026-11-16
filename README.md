@@ -4,10 +4,11 @@ Native Kotlin/Jetpack Compose client for a Unified Server Dashboard backend.
 
 ## Development
 
-Use JDK 17 (the Mac setup has also been verified with Temurin 21), Android SDK
-platform 34 and build-tools 34.0.0. Gradle 8.6 is provided by the wrapper.
-Set `ANDROID_HOME`, or put `sdk.dir=/path/to/android-sdk` in an untracked
-`local.properties`. Do not commit API keys, local settings or build outputs.
+Use JDK 17 or newer (CI builds with 17, releases are built with Temurin 21). The
+wrapper provides Gradle 9.6; the Android Gradle plugin (9.5) compiles Kotlin itself
+and downloads the SDK platform (37) and build-tools (36.0.0) it needs once the SDK
+licence is accepted. Set `ANDROID_HOME`, or put `sdk.dir=/path/to/android-sdk` in an
+untracked `local.properties`. Do not commit API keys, local settings or build outputs.
 
 ```sh
 ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease

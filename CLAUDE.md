@@ -26,7 +26,7 @@ work here.
 
 ## Build and test
 
-The default JDK on this Mac is 24, which breaks the build. Always use 21:
+Build with JDK 21, the one releases ship with (this Mac's default is 24):
 
 ```sh
 export JAVA_HOME=$(/usr/libexec/java_home -v 21)
@@ -64,12 +64,16 @@ on the server and confirms the index lists the new version. Phones update from F
   copy with the *installed* versionCode (same key, so `adb install -r` works), then
   launch and read `adb logcat -b crash -d`. The phone is often locked or off adb; say so
   rather than claiming a visual check.
-- To see a composable without a phone, add Paparazzi temporarily: plugin
-  `id("app.cash.paparazzi") version "1.3.4"` in `app/build.gradle.kts`, a snapshot test
-  under `app/src/test/`, then
+- To see a composable or a whole screen without a phone, add Paparazzi temporarily:
+  plugin `id("app.cash.paparazzi") version "2.0.0-alpha05.1"` in `app/build.gradle.kts`,
+  a snapshot test under `app/src/test/`, then
   `ANDROID_HOME=~/android-sdk ./gradlew :app:recordPaparazziDebug --tests '*YourShot*'`
   and read the PNG in `app/src/test/snapshots/images/`. Remove the plugin, test and
   snapshots before committing.
+- A screen renders from a view model built on fake repositories and passed as its
+  `viewModel` argument, after `Dispatchers.setMain(UnconfinedTestDispatcher())`. Fake
+  every call that view model makes: a real repository call fails inside the renderer,
+  where OkHttp cannot start.
 
 ## The server
 

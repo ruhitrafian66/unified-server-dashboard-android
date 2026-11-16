@@ -99,11 +99,11 @@ class TorrentsViewModel @Inject constructor(
             try {
                 withTimeout(300_000) {
                     id = repository.startSearch(request.query).getOrThrow()
-                    require(id!! >= 0) { "Invalid search response." }
+                    require(id >= 0) { "Invalid search response." }
                     update(token) { it.copy(searchId = id) }
                     var complete = false
                     while (!complete) {
-                        val response = repository.getSearchResults(id!!).getOrThrow()
+                        val response = repository.getSearchResults(id).getOrThrow()
                         update(token) { it.copy(searchResults = response.results.distinctSources(), searchTotal = response.total,
                             searchOffset = response.results.size, searchStatus = response.status,
                             operation = it.operation?.copy(message = "Searching… ${response.total} sources reported")) }
@@ -113,7 +113,7 @@ class TorrentsViewModel @Inject constructor(
                     if (request.autoPick) {
                         update(token) { it.copy(operation = it.operation?.copy(stage = DownloadStage.SELECTING,
                             message = "Checking all results against your rules…")) }
-                        val results = readAllResults(id!!, token)
+                        val results = readAllResults(id, token)
                         val source = selectBestSource(request, results)
                             ?: error("No source meets the title, year/season, quality, seeder and size rules. Review sources manually or change your rules.")
                         mutations.withLock {

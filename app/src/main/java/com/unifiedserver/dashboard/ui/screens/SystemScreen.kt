@@ -14,7 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.unifiedserver.dashboard.data.models.DiskVolume
 import com.unifiedserver.dashboard.data.models.DockerContainer
 import com.unifiedserver.dashboard.data.models.ServiceStatus

@@ -34,6 +34,10 @@ fun ShowItem(
     modifier: Modifier = Modifier,
     downloadEnabled: Boolean = true
 ) {
+    // Material 3 deprecates this veto callback in favour of onDismiss plus reset(). It
+    // still works, and it is what keeps the row in place while the delete confirmation
+    // shows; change the gesture only with a phone at hand to try it on.
+    @Suppress("DEPRECATION")
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             if (value == SwipeToDismissBoxValue.EndToStart) {

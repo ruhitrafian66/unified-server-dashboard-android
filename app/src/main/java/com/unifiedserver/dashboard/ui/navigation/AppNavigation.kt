@@ -103,7 +103,7 @@ fun AppNavigation(isSetupComplete: Boolean, preferences: PreferencesManager, han
             LocalNavigateBack provides { navController.popBackStack() },
             LocalMediaTabs provides if (route in mediaRoutes) {
                 {
-                    TabRow(selectedTabIndex = mediaRoutes.indexOf(route), containerColor = Surface) {
+                    SecondaryTabRow(selectedTabIndex = mediaRoutes.indexOf(route), containerColor = Surface) {
                         mediaTabLabels.forEachIndexed { index, label ->
                             Tab(selected = route == mediaRoutes[index], text = { Text(label) },
                                 onClick = { navigateTop(mediaRoutes[index]) },

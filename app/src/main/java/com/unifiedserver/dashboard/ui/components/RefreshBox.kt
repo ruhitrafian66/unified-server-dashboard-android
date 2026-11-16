@@ -1,12 +1,13 @@
 package com.unifiedserver.dashboard.ui.components
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.google.accompanist.swiperefresh.SwipeRefresh
-import com.google.accompanist.swiperefresh.rememberSwipeRefreshState
 
+/** Pull to refresh around a scrolling screen. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RefreshBox(
     isRefreshing: Boolean,
@@ -14,11 +15,5 @@ fun RefreshBox(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
-    SwipeRefresh(
-        state = rememberSwipeRefreshState(isRefreshing),
-        onRefresh = onRefresh,
-        modifier = modifier
-    ) {
-        Box(content = content)
-    }
+    PullToRefreshBox(isRefreshing = isRefreshing, onRefresh = onRefresh, modifier = modifier, content = content)
 }
